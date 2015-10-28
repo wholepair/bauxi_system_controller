@@ -1,0 +1,86 @@
+<config>
+    <!-- Mission file, contains Lat/Lon: -->
+    <mission>mission.xml</mission>
+    <!-- Port Configurations -->
+    <port>
+        <!--
+        <name>/dev/ttyACM0</name>
+        -->
+        <name>/dev/cu.usbmodem1a12111</name>
+        <rate>115200</rate>
+    </port>
+    <port>
+        <!--
+        <name>/dev/ttyACM1</name>
+        -->
+        <name>/dev/cu.usbmodem1a12131</name>
+        <rate>115200</rate>
+    </port>
+    <port>
+        <!--
+        <name>/dev/ttyUSB0</name>
+        -->
+        <name>/dev/cu.usbserial-FTE1AUNN</name>
+        <rate>57600</rate>
+    </port>
+    <!-- Encoder configuration section. Counts per meter: -->
+    <encoder_counts_per_meter>1000</encoder_counts_per_meter>
+    
+    <!-- Cammera configuration section -->
+    <camera>
+        <!-- Cammera device name: -->
+        <name>/dev/video0</name>
+        <!-- Alternate names are: /dev/video0, video1, etc.. -->
+        <color>
+            <!-- Use the HSV coror model to describe the target's color: -->
+            <hue>7</hue>
+            <saturation>207</saturation>
+            <value>113</value>
+            <!-- Threshold values for hue saturation and value: -->
+            <thresh_h>5</thresh_h>
+            <thresh_s>20</thresh_s>
+            <thresh_v>50</thresh_v>
+        </color>
+        <!-- Ultimately we want to store a set of SIFT/FAST keypoints to 
+         to describe the target's geometry: -->
+        <shape></shape>
+    </camera>
+    <!-- Compass configuration: -->
+    <compass>
+        <!-- The difference between magnetic north and true north: -->
+        <declination>10.5</declination>
+        <!-- X: Calibrate four compass points N, E, S, W: -->
+        <x_north>1</x_north>
+        <x_east>10</x_east>
+        <x_south>100</x_south>
+        <x_west>1000</x_west>
+        <!-- Y: Calibrate four compass points N, E, S, W: -->
+        <y_north>116.84</y_north>
+        <y_east>10</y_east>
+        <y_south>-522.56</y_south>
+        <y_west>-128.8</y_west>
+        <!-- Z: Calibrate four compass points N, E, S, W: -->
+        <z_north>1</z_north>
+        <z_east>10</z_east>
+        <z_south>100</z_south>
+        <z_west>1000</z_west>
+    </compass>
+    <!-- Accelerometer calibration offsets: -->
+    <accelerometer>
+        <!-- Accelerometer X axis calibration value (offset) -->
+        <offset_x>0.04</offset_x>
+        <!-- Accelerometer Y axis calibration value (offset) -->
+        <offset_y>0.03</offset_y>
+        <!-- Accelerometer Z axis calibration value (offset) -->
+        <offset_z>0.001</offset_z>
+    </accelerometer>
+    <!-- Gyroscope calibration offsets: -->
+    <gyroscope>
+        <!-- Gyroscope X axis calibration value (offset) -->
+        <offset_x>1</offset_x>
+        <!-- Gyroscope Y axis calibration value (offset) -->
+        <offset_y>3</offset_y>
+        <!-- Gyroscope Z axis calibration value (offset) -->
+        <offset_z>5</offset_z>
+    </gyroscope>
+</config>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.1" creator="Bing Maps">
+    <metadata>
+        <name>Unsaved places</name>
+        <desc />
+    </metadata>
+    <rte>
+        <name>2015-05-28_downtown</name>
+        <desc />
+        <rtept lat="47.6206" lon="-122.350883333333" type="start" handle="start" />
+        <rtept lat="47.6204333333333" lon="-122.351483333333" type="target" handle="bonus 1" />
+        <rtept lat="47.6201333333333" lon="-122.35115" type="target" handle="bonus 2" />
+        <rtept lat="47.62035" lon="-122.351516666667" type="target" handle="finish" />
+    </rte>
+</gpx>
