@@ -272,6 +272,11 @@ class GpsMessage(Message):
 ###############################################################################
 
 class InertialMessage(Message):
+    """ Parse a message from the IMU. Someday, if it is feasable, we will
+    delegate all the IMU algorithms to the embedded controller, then we will
+    also get: compass heading, speed, distance, pitch, roll from accelerometer,
+    and pitch, roll, yaw, from rate-gyro. 
+    """
     
     ID_INERTIAL = 'i'
     

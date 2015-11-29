@@ -336,7 +336,7 @@ class DataProcessor(object):
                 # Check for None message type and skip process step.
                 message = m.getMessage()
                 if message is not None:
-                    self.processMessage(m.getMessage())
+                    self.processMessage(message)
                 # Update state in the mission planner.
                 
         logger.info("Stopping data processor.")
@@ -383,13 +383,14 @@ class InertialDataProcessor(DataProcessor):
     """
     Process sensor data messages in the context of a class that 'understands'
     the data and how to represent it to the mission_planner and visually via 
-    some graphical display (data visualization rather that data display).
+    some graphical display (data visualization rather than data display).
     """
     DRAW_INTERVAL = 100
     
     def __init__(self, missionPlanner):
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
+        
         self.__compassCalibration = self._configuration.compass
         # Take the average of the two ratios delimiting each interval except for
         # 0 / 0 which is undefined obviously.
@@ -490,6 +491,8 @@ class SpatialDataProcessor(DataProcessor):
     def processMessage(self, message):
         """ Update mission planner state ...
         """
+        # Possibly convert all distance sensor measurements to points in R3
+        # using sensor pointing information from the configuration file.
         self.__missionPlanner.updateSpacial(message)
         logger.debug(message.toString())
         # Check the outgoing message queue for spacial messages.

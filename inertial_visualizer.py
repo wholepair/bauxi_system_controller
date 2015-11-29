@@ -8,7 +8,10 @@ import numpy as np
 import cv2
 
 
-class InertialVisualizer(object):
+class SensorDataVisualizer(object):
+    """ Base class providing basic drawing functions. Inheritors can implement
+    specialized graphical representations of their sensor data. 
+    """
     
     def __init__(self):
         # Create a black image
@@ -22,7 +25,15 @@ class InertialVisualizer(object):
         # Add trackbars to show different combinations of data.
         cv2.imshow(self.__frameName, self.__img)
         pass
-
+    
+    def drawPoint(self, x, y):
+        cv2.circle(self.__img, (x, y), 1, (255, 0, 0))
+        return
+    
+    def drawLine(self, p1, p2):
+        pass
+    
+    
     # TODO: provide functions to update the line locations for:
     # Compass Heading (calculated), XY raw: 1 window, 2 views
     # X Is lateral,Y is longitudinal:
@@ -36,4 +47,5 @@ class InertialVisualizer(object):
     #  
     
     
-foo = InertialVisualizer()
+foo = SensorDataVisualizer()
+
