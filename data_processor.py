@@ -1,3 +1,7 @@
+"""
+The data processor interprets data received from the IPC manager.
+"""
+
 import threading
 from lxml import etree
 import Queue, math
@@ -325,6 +329,7 @@ class DataProcessor(object):
         t.start()
         return
         
+    
     def runDataProcessors(self):
         """ Poll the message loop for incoming IPC messages.
         """
@@ -378,7 +383,8 @@ class DataProcessor(object):
             callback(message)
         return
     
-        
+    
+
 class InertialDataProcessor(DataProcessor):
     """
     Process sensor data messages in the context of a class that 'understands'
@@ -419,6 +425,10 @@ class InertialDataProcessor(DataProcessor):
 
     def processMessage(self, message):
         # Dispatch message to the relevant class's processor:
+        
+        #print '\r%s'%round(message.heading, 4),
+        #sys.stdout.flush()
+        
         self.__message = message
         
         yaw = math.atan2(message.magY, message.magX)
@@ -500,10 +510,12 @@ class SpatialDataProcessor(DataProcessor):
             # TODO: peek in the queue to see that it is for us...
             txMessage = self._txQueue.get()
             if txMessage[0] == self.ID_SPACIAL:
-                print 'Spacial Data Processor: transmit message:', txMessage
+                #print 'Spacial Data Processor: transmit message:', txMessage
                 message.txCallback(txMessage[2:])
         return
     
+    
+import sys 
     
 class GpsDataProcessor(DataProcessor):
     
@@ -524,7 +536,8 @@ class GpsDataProcessor(DataProcessor):
             lon *= -1
         
         if lat != self.__missionPlanner.lat or lon != self.__missionPlanner.lon:
-            print lat, lon
+            #print '\r%s, %s'%(round(lat, 4), round(lon, 4)),
+            #sys.stdout.flush()
             self.__missionPlanner.updateGps(message, lat, lon)
         
         # TODO: convert lat/lon to easting and northing (x, y) coordinates
