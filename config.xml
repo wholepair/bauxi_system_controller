@@ -6,14 +6,14 @@
         <!--
         <name>/dev/ttyACM0</name>
         -->
-        <name>/dev/cu.usbmodem1a12111</name>
+        <name>/dev/cu.usbmodem1A12111</name>
         <rate>115200</rate>
     </port>
     <port>
         <!--
         <name>/dev/ttyACM1</name>
         -->
-        <name>/dev/cu.usbmodem1a12131</name>
+        <name>/dev/cu.usbmodem1A12131</name>
         <rate>115200</rate>
     </port>
     <port>
