@@ -1,3 +1,8 @@
+"""
+The IPC manager collects data from the various data sources, inertial, spacial,
+visual, etc. It also feeds back control signals to the spacial controller in 
+order to affect the platform's movement. 
+"""
 
 import threading
 import time
@@ -17,6 +22,13 @@ logger.setLevel(logging.DEBUG)
 logger.info('OpenCV Version: ' + str(cameras.getCvVersion()))
 
 class Message(object):
+    """
+    Generic message super class. Contains an ID, which indicates the data
+    source, a data valid flag which indicates whether the sensor data message
+    was parsed/decoded properly, creation time fields, add a callback to allow
+    the data processor to send a signal/message back to the controller that 
+    originated the data.
+    """
     
     def __init__(self, identifier, txCallback):
         self._creationTime = time.time()
@@ -152,6 +164,8 @@ class GpsMessage(Message):
         
         @property
         def Id(self):
+            """Different than the message ID, this is the GPS message ID.
+            """
             return self.__Id
         
         @property
@@ -279,10 +293,16 @@ class InertialMessage(Message):
     """
     
     ID_INERTIAL = 'i'
+    IN_MOTION = 1
+    ACCEL_GYRO_CAL = 2
+    COMPASS_CAL = 4
     
     def __init__(self, data, txCallback):
+        """InertialMessage constructor.
+        """
         Message.__init__(self, self.ID_INERTIAL, txCallback)
         data = data.strip()[2:].split(',')
+        # Raw sensor data:
         self.__magX = float(data[0])
         self.__magY = float(data[1])
         self.__magZ = float(data[2])
@@ -292,18 +312,73 @@ class InertialMessage(Message):
         self.__gyroX = float(data[6])
         self.__gyroY = float(data[7])
         self.__gyroZ = float(data[8])
-        self.__milliseconds = int(data[9])
-        self.__microseconds = int(data[10])
+        # Signal conditioned data:
+        # Adjusted magnetic field data X
+        self.__adjMagX = float(data[9])
+        # Adjusted magnetic field data Y
+        self.__adjMagY = float(data[10])
+        # Heading
+        self.__heading = float(data[11])
+        
+        # Accelerometer pitch
+        self.__accPitch = float(data[12])
+        # Accelerometer roll
+        self.__accRoll = float(data[13])
+        
+        # Accelerometer speed X (integrated)
+        self.__accSpeedX = float(data[14])
+        # Accelerometer speed Y (integrated)
+        self.__accSpeedY = float(data[15])
+        # Accelerometer speed Z (integrated)
+        self.__accSpeedZ = float(data[16])
+        
+        # Accelerometer distance X (integrated)
+        self.__accDistX = float(data[17])
+        # Accelerometer distance Y (integrated)
+        self.__accDistY = float(data[18])
+        # Accelerometer distance Z (integrated)
+        self.__accDistZ = float(data[19])
+        
+        # Gyroscope degrees rotated X
+        self.__gyroDegreesX = float(data[20])
+        # Gyroscope degrees rotated Y
+        self.__gyroDegreesY = float(data[21])
+        # Gyroscope degrees rotated Z
+        self.__gyroDegreesZ = float(data[22])
+        
+        # Status field
+        # Bit 0: in motion
+        # Bit 1: accelerometer and gyroscope are calibrated
+        # Bit 2: compass is calibrated
+        self.__status = int(data[23])
+        self.__inMotion = bool(self.__status & self.IN_MOTION)
+        self.__accelGyroCal = bool(self.__status & self.ACCEL_GYRO_CAL)
+        self.__compassCal = bool(self.__status & self.COMPASS_CAL)
+        
+        self.__milliseconds = int(data[24])
+        self.__microseconds = int(data[25])
         self._valid = True
         return
     
     def toString(self):
         c = ','
-        iString = c + self.ID_INERTIAL + c + str(self.__magX) + c \
+        """
+            # Don't include the raw values in the string.
             + str(self.__magY) + c + str(self.__magZ) + c \
             + str(self.__accX) + c + str(self.__accY) + c \
             + str(self.__accZ) + c + str(self.__gyroX) + c \
             + str(self.__gyroY) + c + str(self.__gyroZ) + c \
+        """
+        iString = c + self.ID_INERTIAL + c + str(self.__magX) + c \
+            + str(self.__adjMagX) + c + str(self.__adjMagY) + c \
+            + str(self.__heading) + c + str(self.__accPitch) + c \
+            + str(self.__accRoll) + c + str(self.__accSpeedX) + c \
+            + str(self.__accSpeedY) + c + str(self.__accSpeedZ) + c \
+            + str(self.__accDistX) + c + str(self.__accDistY) + c \
+            + str(self.__accDistZ) + c + str(self.__gyroDegreesX) + c \
+            + str(self.__gyroDegreesY) + c + str(self.__gyroDegreesZ) + c \
+            + str(self.__status) + c + str(self.__inMotion) + c \
+            + str(self.__accelGyroCal) + c + str(self.__compassCal) + c \
             + str(self.__milliseconds) + c + str(self.__microseconds) + c \
             + str(self._creationTime) + c + str(self._creationTick)
         return iString
@@ -343,7 +418,79 @@ class InertialMessage(Message):
     @property
     def gyroZ(self):
         return self.__gyroZ
-
+    
+    @property
+    def adjMagX(self):
+        return self.__adjMagX
+    
+    @property
+    def adjMagY(self):
+        return self.__adjMagY
+    
+    @property
+    def heading(self):
+        return self.__heading
+    
+    @property
+    def accPitch(self):
+        return self.__accPitch
+    
+    @property
+    def accRoll(self):
+        return self.__accRoll
+    
+    @property
+    def accSpeedX(self):
+        return self.__accSpeedX
+    
+    @property
+    def accSpeedY(self):
+        return self.__accSpeedY
+    
+    @property
+    def accSpeedZ(self):
+        return self.__accSpeedZ
+    
+    @property
+    def accDistX(self):
+        return self.__accDistX
+    
+    @property
+    def accDistY(self):
+        return self.__accDistY
+    
+    @property
+    def accDistZ(self):
+        return self.__accDistZ
+    
+    @property
+    def gyroDegreesX(self):
+        return self.__gyroDegreesX
+    
+    @property
+    def gyroDegreesY(self):
+        return self.__gyroDegreesY
+    
+    @property
+    def gyroDegreesZ(self):
+        return self.__gyroDegreesZ
+    
+    @property
+    def status(self):
+        return self.__status
+    
+    @property
+    def inMotion(self):
+        return self.__inMotion
+    
+    @property
+    def accelGyroCal(self):
+        return self.__accelGyroCal
+    
+    @property
+    def compassCal(self):
+        return self.__compassCal
+    
     @property
     def milliseconds(self):
         return self.__milliseconds
@@ -365,6 +512,8 @@ class SpacialMessage(Message):
     ID_SPACIAL = 's'
     
     def __init__(self, data, txCallback):
+        # TODO: enable debug messages from the microcontroller, something like:
+        # if data starts with 'DEBUG:' print message in the log, then return.
         Message.__init__(self, self.ID_SPACIAL, txCallback)
         data = data.strip()[2:].split(',')
         # Parse sonar sensor data:
@@ -380,8 +529,19 @@ class SpacialMessage(Message):
         # Encoder counter and motor status (faults):
         self.__encoderCountsLeft  = data[5]
         self.__encoderCountsRight = data[6]
-        self.__motorStatusLeft  = data[7]
-        self.__motorStatusRight = data[8]
+        # Left motor status:
+        self.__motorStatusLeft = int(data[7])
+        self.__motorControlVariableLeft = self.__motorStatusLeft & 0xFF
+        self.__motorSetPointLeft = (self.__motorStatusLeft >> 8) & 0xFF
+        self.__motorProcessVariableLeft = (self.__motorStatusLeft >> 16) & 0xFF
+        self.__motorsEnabled = bool((self.__motorStatusLeft >> 24) & 0xFF)
+        # Right motor status:
+        self.__motorStatusRight = int(data[8])
+        self.__motorControlVariableRight = self.__motorStatusRight & 0xFF
+        self.__motorSetPointRight = (self.__motorStatusRight >> 8) & 0xFF
+        self.__motorProcessVariableRight = (self.__motorStatusRight >> 16) & 0xFF
+        self.__motorsRunMode = (self.__motorStatusRight >> 24) & 0xFF
+        # TODO: extract the run mode and motors enabled status from motor status.
         # Remote control buttons:
         self.__buttonA  = data[9]
         self.__buttonB  = data[10]
@@ -456,8 +616,45 @@ class SpacialMessage(Message):
         return self.__motorStatusLeft
     
     @property
+    def motorControlVariableLeft(self):
+        return self.__motorControlVariableLeft
+    
+    @property
+    def motorSetPointLeft(self):
+        return self.__motorSetPointLeft
+    
+    @property
+    def motorProcessVariableLeft(self):
+        return self.__motorProcessVariableLeft
+    
+    @property
+    def motorsEnabled(self):
+        return self.__motorsEnabled
+    
+    @property
     def motorStatusRight(self):
         return self.__motorStatusRight
+    
+    
+    
+    
+    @property
+    def motorControlVariableRight(self):
+        return self.__motorControlVariableRight
+    
+    @property
+    def motorSetPointRight(self):
+        return self.__motorSetPointRight
+    
+    @property
+    def motorProcessVariableRight(self):
+        return self.__motorProcessVariableRight
+    
+    @property
+    def motorsRunMode(self):
+        return self.__motorsRunMode
+    
+    
     
     @property
     def buttonA(self):
@@ -560,6 +757,8 @@ class CameraMessage(Message):
 ###############################################################################
 
 class IpcManager(object):
+    """Class IPC manager, polls the controllers for data.
+    """
 
     RUN_SERVICE = True;
 
@@ -569,6 +768,8 @@ class IpcManager(object):
     GPS_NAV = '$'
     CAMERA = 'c'
     
+    # The callback table contains function pointers that allow the correct
+    # message to be instantiated upon receipt of a new message.
     __callbackTable = { INERTIAL_NAV : InertialMessage
                       , SPATIAL_NAV : SpacialMessage
                       , GPS_NAV : GpsMessage 
@@ -637,11 +838,13 @@ class IpcManager(object):
         return
         
     def messageAvaliable(self):
-        """
+        """Predicate flag to indicate that the message queue contains messages.
         """
         return not self.__messageQueue.empty()
     
     def getMessage(self):
+        """Dequeue a message.
+        """
         #print self.__messageQueue.qsize()
         try:
             return self.__messageQueue.get(True, 10)
@@ -649,6 +852,8 @@ class IpcManager(object):
             print e
             
     def putMessage(self, data):
+        """Enqueue a message to send to a controller.
+        """
         #print self.__messageQueue.qsize()
         try:
             self.__channel.write(data)
