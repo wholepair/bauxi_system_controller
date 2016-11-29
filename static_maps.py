@@ -1,8 +1,10 @@
-'''
+"""
 Created on Sep 27, 2015
 
+
+
 @author: weston
-'''
+"""
 
 import numpy as np
 import matplotlib.pyplot as plot
@@ -13,6 +15,9 @@ import cv2
 
 
 class StaticMap(object):
+    """
+    Show the robot's location and sensor data, blocked versus unblocked areas.
+    """
     
     def __init__(self):
         """What would be good initialization parameters to pass here?
@@ -27,6 +32,9 @@ class StaticMap(object):
     
     
     def getMapImage(self, currentLocation, missionLocations, mapName='location'):
+        """
+        What does this function do?
+        """
         if currentLocation[0] != 0 or currentLocation[1] != 0:
             print 'Lat:', currentLocation[0], 'Lon:', currentLocation[1]
             coor1 = round(currentLocation[0], 4)
