@@ -1,8 +1,8 @@
-'''
+"""
 Created on Oct 20, 2015
 
 @author: weston
-'''
+"""
 
 import numpy as np
 import cv2
