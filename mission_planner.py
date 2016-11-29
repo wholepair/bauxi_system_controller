@@ -131,15 +131,17 @@ class MissionPlanner(object):
     __currentMode = MODE_UNKNOWN
     logger.info('Setting current mode to: MODE_UNKNOWN.')
     
-    SPACIAL_MODE_AUTO_AVOID = 0
-    SPACIAL_MODE_EXT_CONTROL = 1
-    SPACIAL_MODE_REMOTE_CONTROL = 2
+    # Spacial controllers modes of operation, see 
+    SPACIAL_MODE_AUTO_AVOID = 0     # Use sensors to automatically avoid objects.
+    SPACIAL_MODE_EXT_CONTROL = 1    # Rely on external software control commands.
+    SPACIAL_MODE_REMOTE_CONTROL = 2 # Rely on remote (radio) control for movement.
     
     SPACIAL_MODE_NAMES = { SPACIAL_MODE_AUTO_AVOID     : 'SPACIAL_MODE_AUTO_AVOID'
                          , SPACIAL_MODE_EXT_CONTROL    : 'SPACIAL_MODE_EXT_CONTROL'
-                         , SPACIAL_MODE_REMOTE_CONTROL : 'SPACIAL_MODE_REMOTE_CONTROL' }
+                         , SPACIAL_MODE_REMOTE_CONTROL : 'SPACIAL_MODE_REMOTE_CONTROL'
+                         }
     
-    __currentSpacialMode = SPACIAL_MODE_AUTO_AVOID
+    __currentSpacialMode = SPACIAL_MODE_EXT_CONTROL
     
     THRESHOLD_TARGET_DISTANCE = 15 # Meters to target before we look for it...
     THRESHOLD_LOCATION_DISTANCE = 10 # Meters to location before we go to the next one.
@@ -274,6 +276,7 @@ class MissionPlanner(object):
                 print 'Inertial System:', self.__messageInertial
                 print 'GPS System:', self.__messageGps
                 print 'Vision System:', self.__messageVision
+                stop()
             if self.__messageInertial is not None \
                 and self.__messageGps is not None \
                 and self.__messageVision is not None:
@@ -285,7 +288,58 @@ class MissionPlanner(object):
                 # Set the run mode of the spacial controller
                 logger.info('Setting spacial controller mode: SPACIAL_MODE_EXT_CONTROL')
                 self.setRunModeSpacial(self.SPACIAL_MODE_EXT_CONTROL)
-        
+        elif self.__currentState == self.STATE_NORMAL_OPERATION:
+            print '\x1b[2J\x1b[H' # This clears the console apparently
+            print 'Inertial System Data:'
+            print '*********************'
+            print 'Magnetometer:'
+            print '-------------'
+            print 'Heading:', self.__messageInertial.heading
+            print 'Accelerometer:'
+            print '--------------'
+            print 'Pitch:  ', self.__messageInertial.accPitch
+            print 'Roll:   ', self.__messageInertial.accRoll
+            print 'Speed X:', self.__messageInertial.accSpeedX # First Integral
+            print 'Speed Y:', self.__messageInertial.accSpeedY
+            print 'Speed Z:', self.__messageInertial.accSpeedZ
+            print 'Dist X: ', self.__messageInertial.accDistX # Second Integral
+            print 'Dist Y: ', self.__messageInertial.accDistY
+            print 'Dist Z: ', self.__messageInertial.accDistZ
+            print 'Rate Gyroscope:'
+            print '---------------'
+            print 'Gyro X: ', self.__messageInertial.gyroDegreesX
+            print 'Gyro Y: ', self.__messageInertial.gyroDegreesY
+            print 'Gyro Z: ', self.__messageInertial.gyroDegreesZ
+            print 'Inertial System Status:'
+            print '-----------------------'
+            print 'In Motion:      ', self.__messageInertial.inMotion
+            print 'Accel Gyro Cal: ', self.__messageInertial.accelGyroCal
+            print 'Compass Cal:    ', self.__messageInertial.compassCal
+            
+            print 'Platform System Data:'
+            print '*********************'
+            print 'Sonar Distances (cm):'
+            print '---------------------'
+            print 'Sonar Front: ', self.__messageSpacial.sonarFront
+            print 'Sonar Left:  ', self.__messageSpacial.sonarLeft
+            print 'Sonar Right: ', self.__messageSpacial.sonarRight
+            print 'Sonar Back:  ', self.__messageSpacial.sonarBack
+            print 'Encoder Counts:'
+            print '---------------'
+            print 'Encoder Counts Left: ', self.__messageSpacial.encoderCountsLeft
+            print 'Encoder Counts Right:', self.__messageSpacial.encoderCountsRight
+            print 'Motor Status:'
+            print '-------------'
+            print 'Control Variable Left: ', self.__messageSpacial.motorControlVariableLeft
+            print 'Set Point Left:        ', self.__messageSpacial.motorSetPointLeft
+            print 'Process Variable Left: ', self.__messageSpacial.motorProcessVariableLeft
+            print 'Control Variable Right: ', self.__messageSpacial.motorControlVariableRight
+            print 'Set Point Right:        ', self.__messageSpacial.motorSetPointRight
+            print 'Process Variable Right: ', self.__messageSpacial.motorProcessVariableRight
+            print 'Motors Run Mode:     ', self.SPACIAL_MODE_NAMES[self.__messageSpacial.motorsRunMode]
+            print 'Motors Enabled:      ', self.__messageSpacial.motorsEnabled
+
+            
         # TODO: lots more control flow, everything is driven by spacial updates
         #self.__computeSpacialPosition()
         
@@ -398,7 +452,6 @@ class MissionPlanner(object):
         """ Update the vision information. Can see target...
         """
         self.__messageVision = message
-        
         self.__targetVisible = message.targetShapeVisible
         self.__targetX = message.targetShapeX
         self.__targetY = message.targetShapeY
@@ -452,6 +505,7 @@ class MissionPlanner(object):
         MODE_REMOTE_CONTROL = 2
         """
         self.__dataProcessor.sendMessage('s:m:' + str(mode) + ';')
+        self.__currentSpacialMode = mode
         return
     
     
