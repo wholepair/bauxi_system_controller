@@ -1,8 +1,8 @@
-'''
+"""
 Created on Sep 27, 2015
 
 @author: weston
-'''
+"""
 
 
 # import the necessary packages
@@ -413,7 +413,7 @@ class RaspPiCamera(Camera):
 
 
 ###############################################################################
-# USB CAMERA (WEBVAM):
+# USB CAMERA (WEBCAM):
 ###############################################################################
 
 class WebCamera(Camera):
