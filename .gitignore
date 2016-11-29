@@ -1,0 +1,7 @@
+*.pyc
+*.jpg
+*.png
+*.log
+.DS_Store
+google_api_key.txt
+
