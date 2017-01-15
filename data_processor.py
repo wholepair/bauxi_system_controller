@@ -98,30 +98,6 @@ class Configuration(object):
                 if type(child) == etree._Comment: continue
                 elif child.tag == 'declination':
                     self.__declination = float(child.text)
-                elif child.tag == 'x_north':
-                    self.__xNorth = float(child.text)
-                elif child.tag == 'x_east':
-                    self.__xEast = float(child.text)
-                elif child.tag == 'x_south':
-                    self.__xSouth = float(child.text)
-                elif child.tag == 'x_west':
-                    self.__xWest = float(child.text)
-                elif child.tag == 'y_north':
-                    self.__yNorth = float(child.text)
-                elif child.tag == 'y_east':
-                    self.__yEast = float(child.text)
-                elif child.tag == 'y_south':
-                    self.__ySouth = float(child.text)
-                elif child.tag == 'y_west':
-                    self.__yWest = float(child.text)
-                elif child.tag == 'z_north':
-                    self.__zNorth = float(child.text)
-                elif child.tag == 'z_east':
-                    self.__zEast = float(child.text)
-                elif child.tag == 'z_south':
-                    self.__zSouth = float(child.text)
-                elif child.tag == 'z_west':
-                    self.__zWest = float(child.text)
                     
             # TODO: parse compass, accelerometer, and gyroscope settings.
             return
@@ -129,65 +105,10 @@ class Configuration(object):
         @property
         def declination(self):
             return self.__declination
-    
-        # X axis compass calibration constants.
-        
-        @property
-        def xNorth(self):
-            return self.__xNorth
-        
-        @property
-        def xEast(self):
-            return self.__xEast
-        
-        @property
-        def xSouth(self):
-            return self.__xSouth
-        
-        @property
-        def xWest(self):
-            return self.__xWest
-            
-        # Y axis compass calibration constants.
-        
-        @property
-        def yNorth(self):
-            return self.__yNorth
-        
-        @property
-        def yEast(self):
-            return self.__yEast
-        
-        @property
-        def ySouth(self):
-            return self.__ySouth
-        
-        @property
-        def yWest(self):
-            return self.__yWest
-        
-        # Z axis compass calibration constants.
-        
-        @property
-        def zNorth(self):
-            return self.__zNorth
-        
-        @property
-        def zEast(self):
-            return self.__zEast
-        
-        @property
-        def zSouth(self):
-            return self.__zSouth
-        
-        @property
-        def zWest(self):
-            return self.__zWest
             
     
     def __init__(self):
-        """
-        Open the configuration XML file and initialize the configuration 
+        """Open the configuration XML file and initialize the configuration 
         subsystem:
         Mission File: mission XML file name.
         Port List: A list of TTYs for serial data streaming.
@@ -229,26 +150,14 @@ class Configuration(object):
     
     @property
     def compass(self):
-        """ Fields:
+        """Fields:
         declination - magnetic declination
-        xNorth   - Sensor output when oriented north
-        xEast    - Sensor output when oriented east
-        xSouth   - Sensor output when oriented south
-        xWest    - Sensor output when oriented west
-        yNorth   - ...
-        yEast
-        ySouth
-        yWest
-        zNorth
-        zEast
-        zSouth
-        zWest
         """
         return self.__compass
         
     @property
     def encoderCountsPerMeter(self):
-        """ float.
+        """float.
         """
         return self.__encoderCountsPerMeter
         
@@ -257,6 +166,8 @@ class MissionFile(object):
     List of coordinates and their properties, target 
     """
     pass
+
+
 
 ###############################################################################
 # DATA PROCESSOR: base class.
@@ -289,6 +200,7 @@ class DataProcessor(object):
             # Initialize some common fields used between the parent and the 
             # children, but then return immediately.
             self._txQueue = Queue.Queue()
+            self._messagesProcessedCount = 0;
             return
             
         logger.info("Starting IPC managers.")
@@ -311,6 +223,9 @@ class DataProcessor(object):
         self.__spatialNav = SpatialDataProcessor(missionPlanner)
         self.__gpsNav = GpsDataProcessor(missionPlanner)
         self.__camera = CameraDataProcessor(missionPlanner)
+        
+        self.__processors = (self.__inertialNav, self.__spatialNav
+                             , self.__gpsNav, self.__camera)
         
         # Message processor callbacks, used when receiving an IPC message.
         self.__processorTable = { 'i' : self.__inertialNav.processMessage
@@ -337,14 +252,18 @@ class DataProcessor(object):
         __processingLoopEntered = True
         while self.RUN_SERVICE:
             for m in self.__ipcManagers:
-                if not self.RUN_SERVICE: break
+                if not self.RUN_SERVICE:
+                    logger.info("Data processor RUN_SERVIC = 0.")
+                    break
                 # Check for None message type and skip process step.
                 message = m.getMessage()
                 if message is not None:
                     self.processMessage(message)
                 # Update state in the mission planner.
-                
-        logger.info("Stopping data processor.")
+        
+        for p in self.__processors:
+            print p, 'messages processed:', p._messagesProcessedCount
+        logger.info("Stopped data processor.")
         return
     
     
@@ -352,11 +271,11 @@ class DataProcessor(object):
         """
         """
         # Dispatch message to the relevant class's processor:
-        if message is not None:
+        if message is not None and message.Id is not None:
             self.__processorTable.get(message.Id, None)(message)
         return
-
-
+    
+    
     def shutdown(self):
         # Stop all child threads and the parent thread.
         ipc_manager.IpcManager.RUN_SERVICE = False
@@ -397,29 +316,11 @@ class InertialDataProcessor(DataProcessor):
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
         
-        self.__compassCalibration = self._configuration.compass
-        # Take the average of the two ratios delimiting each interval except for
-        # 0 / 0 which is undefined obviously.
-        # From 0 (east) to pi / 2 (north)
-        self.__ratio1 = (math.pi / 2.0) / self.__compassCalibration.yNorth
-        # The average of north and west
-        self.__ratio2 = math.pi / self.__compassCalibration.yWest
-        
-        self.__ratio3 = (3 * math.pi / 2.0) / self.__compassCalibration.ySouth
-        
-        self.__ratio3 = (2 * math.pi) / self.__compassCalibration.yEast
-        
-        # The average of west and south
-        
-        
+        self.__declanation = self._configuration.compass.declination
         self.__message = None
         #self.__plotter = plotter.Plotter()
         #self.__drawCounter = 0
         # Only call this for the last data processor instantiated. 
-        
-        self.__compassHeadingX = 0.0
-        self.__compassHeadingY = 0.0
-        self.__compassHeadingZ = 0.0
         return
 
 
@@ -443,7 +344,7 @@ class InertialDataProcessor(DataProcessor):
         yawDegrees = yaw * 180.0 / math.pi
         
         #print yawRadians, yawDegrees
-        
+        self._messagesProcessedCount += 1
         self.__missionPlanner.updateInertial(message, yawRadians, yawDegrees)
         logger.debug(message.toString())
         
@@ -460,7 +361,7 @@ class InertialDataProcessor(DataProcessor):
     
     
     def convertToRadians(self):
-        """ Convert the magnetic sensor data to radians.
+        """Convert the magnetic sensor data to radians.
         Per the unit circle:
         east = 0
         north = pi / 2
@@ -474,21 +375,18 @@ class InertialDataProcessor(DataProcessor):
     
     
     def convertToGravities(self):
-        """ Convert accelerometer data to G's.
-        """
+        """Convert accelerometer data to G's."""
         return
     
     
     def convertToRadiansPerSecond(self):
-        """ Convert rate gyro data to radians per second (or degrees...). 
-        """
+        """ Convert rate gyro data to radians per second (or degrees...)."""
         return
     
     
 
 class SpatialDataProcessor(DataProcessor):
-    """ Convert the counts to distances etc..
-    """
+    """Convert the counts to distances etc.."""
 
     ID_SPACIAL = 's'
     
@@ -499,10 +397,10 @@ class SpatialDataProcessor(DataProcessor):
     
     
     def processMessage(self, message):
-        """ Update mission planner state ...
-        """
+        """Update mission planner state ..."""
         # Possibly convert all distance sensor measurements to points in R3
         # using sensor pointing information from the configuration file.
+        self._messagesProcessedCount += 1
         self.__missionPlanner.updateSpacial(message)
         logger.debug(message.toString())
         # Check the outgoing message queue for spacial messages.
@@ -515,6 +413,7 @@ class SpatialDataProcessor(DataProcessor):
         return
     
     
+
 import sys 
     
 class GpsDataProcessor(DataProcessor):
@@ -524,10 +423,10 @@ class GpsDataProcessor(DataProcessor):
         self.__missionPlanner = missionPlanner
         return
     
+    
     def processMessage(self, message):
         # Process GPS messages. Compute northing and easting from lat/lon.
-        """
-        """
+        """"""
         lat = message.fields.latDegrees + message.fields.latMinutes / 60.0
         if message.fields.nS == 'S':
             lat *= -1
@@ -535,6 +434,7 @@ class GpsDataProcessor(DataProcessor):
         if message.fields.eW == 'W':
             lon *= -1
         
+        self._messagesProcessedCount += 1
         if lat != self.__missionPlanner.lat or lon != self.__missionPlanner.lon:
             #print '\r%s, %s'%(round(lat, 4), round(lon, 4)),
             #sys.stdout.flush()
@@ -548,6 +448,12 @@ class GpsDataProcessor(DataProcessor):
 
 class CameraDataProcessor(DataProcessor):
     """ Camera data processor class.
+    
+    Implements:
+        processMessage: 
+            Update code in the mission planner, send any messages in the TX 
+            queue to the peripheral controller.
+    Info: Data processor ID = 'c'
     """
     
     ID_CAMERA = 'c'
@@ -557,10 +463,12 @@ class CameraDataProcessor(DataProcessor):
         self.__missionPlanner = missionPlanner
         return
     
+    
     def processMessage(self, message):
         # Process GPS messages. Compute northing and easting from lat/lon.
         """
         """
+        self._messagesProcessedCount += 1
         self.__missionPlanner.updateVision(message)
         logger.debug(message.toString())
         if self._txQueue.qsize() > 0:
