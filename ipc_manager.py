@@ -22,8 +22,7 @@ logger.setLevel(logging.DEBUG)
 logger.info('OpenCV Version: ' + str(cameras.getCvVersion()))
 
 class Message(object):
-    """
-    Generic message super class. Contains an ID, which indicates the data
+    """Generic message super class. Contains an ID, which indicates the data
     source, a data valid flag which indicates whether the sensor data message
     was parsed/decoded properly, creation time fields, add a callback to allow
     the data processor to send a signal/message back to the controller that 
@@ -31,12 +30,14 @@ class Message(object):
     """
     
     def __init__(self, identifier, txCallback):
-        self._creationTime = time.time()
-        self._creationTick = time.clock()
+        """Constructor"""
+        self._creationTime = time.time() # Time since Jan 1 1970.
+        self._creationTick = time.clock() # Time since start of program.
         self.__Id = identifier
         self._valid = False
         self._txCallback = txCallback
         return
+    
 
     @property
     def valid(self):
@@ -57,15 +58,15 @@ class Message(object):
     @property
     def txCallback(self):
         return self._txCallback
-
+    
+    
 
 ###############################################################################
 # GPS MESSAGE(s): :
 ###############################################################################
 
 class GpsMessage(Message):
-    """
-    GPS Receiver - LS20031 5Hz (66 Channel)
+    """GPS Receiver - LS20031 5Hz (66 Channel)
 
     GGA - Global positioning system fixed data
     $GPGGA,053740.000,2503.6319,N,12136.0099,E,1,08,1.1,63.8,M,15.2,M,,0000*64
@@ -120,9 +121,11 @@ class GpsMessage(Message):
     GPS_RMC = 'GPRMC'
     GPS_VTG = 'GPVTG'
     
-    
     class GgaData(object):
+        """Initialize a GGA message."""
+        
         def __init__(self, data):
+            """Constructor"""
             # Name            | Example       | Units | Description
             # --------------------------------------------------------------------
             # Message ID:     | $GPGGA        |       | GGA protocol header
@@ -162,10 +165,10 @@ class GpsMessage(Message):
             self.__ref  = data[14]
             return
         
+        
         @property
         def Id(self):
-            """Different than the message ID, this is the GPS message ID.
-            """
+            """Different than the message ID, this is the GPS message ID."""
             return self.__Id
         
         @property
@@ -251,21 +254,29 @@ class GpsMessage(Message):
     ID_GPS = 'g'
     
     def __init__(self, data, txCallback):
-        Message.__init__(self, self.ID_GPS, txCallback)
-        self.__fields = None
+        """Initialize the GPS message."""
+        
+        # Look up a GPS message type class to instantiate.
         data = data.strip()[1:].split(',')
-        # Make a new instance of the thing.
         message = self.__messageTable.get(data[0], None)
         if message is not None:
+            Message.__init__(self, self.ID_GPS, txCallback)
             try:
                 self.__fields = message(data)
+                self.toString()
             except Exception, e:
                 self.__fields = None
-                #print e
+                logger.warning('GPS parse error: ' + str(e))
+        else:
+            # We dont decode this NMEA string yet...
+            Message.__init__(self, None, None)
+            self.__fields = -1
         self._valid = self.__fields is not None
         return
     
+    
     def toString(self):
+        """Turn the message into its string representation."""
         c = ','
         iString = c + self.ID_GPS + c + str(self.__fields.Id) + c \
             + str(self.__fields.utc) + c + str(self.__fields.lat) + c \
@@ -276,11 +287,14 @@ class GpsMessage(Message):
             + str(self._creationTime) + c + str(self._creationTick)
         return iString
     
+    
     @property
     def fields(self):
         return self.__fields
-
     
+    
+
+
 ###############################################################################
 # INERTIAL MESSAGE: direction, acceleration, rotation:
 ###############################################################################
@@ -298,8 +312,8 @@ class InertialMessage(Message):
     COMPASS_CAL = 4
     
     def __init__(self, data, txCallback):
-        """InertialMessage constructor.
-        """
+        """InertialMessage constructor."""
+        #if not data.startswith('$GPGGA'): break 
         Message.__init__(self, self.ID_INERTIAL, txCallback)
         data = data.strip()[2:].split(',')
         # Raw sensor data:
@@ -319,33 +333,28 @@ class InertialMessage(Message):
         self.__adjMagY = float(data[10])
         # Heading
         self.__heading = float(data[11])
-        
         # Accelerometer pitch
         self.__accPitch = float(data[12])
         # Accelerometer roll
         self.__accRoll = float(data[13])
-        
         # Accelerometer speed X (integrated)
         self.__accSpeedX = float(data[14])
         # Accelerometer speed Y (integrated)
         self.__accSpeedY = float(data[15])
         # Accelerometer speed Z (integrated)
         self.__accSpeedZ = float(data[16])
-        
         # Accelerometer distance X (integrated)
         self.__accDistX = float(data[17])
         # Accelerometer distance Y (integrated)
         self.__accDistY = float(data[18])
         # Accelerometer distance Z (integrated)
         self.__accDistZ = float(data[19])
-        
         # Gyroscope degrees rotated X
         self.__gyroDegreesX = float(data[20])
         # Gyroscope degrees rotated Y
         self.__gyroDegreesY = float(data[21])
         # Gyroscope degrees rotated Z
         self.__gyroDegreesZ = float(data[22])
-        
         # Status field
         # Bit 0: in motion
         # Bit 1: accelerometer and gyroscope are calibrated
@@ -354,13 +363,14 @@ class InertialMessage(Message):
         self.__inMotion = bool(self.__status & self.IN_MOTION)
         self.__accelGyroCal = bool(self.__status & self.ACCEL_GYRO_CAL)
         self.__compassCal = bool(self.__status & self.COMPASS_CAL)
-        
         self.__milliseconds = int(data[24])
         self.__microseconds = int(data[25])
         self._valid = True
         return
     
+    
     def toString(self):
+        """Turn the inertial measurement message into a string."""
         c = ','
         """
             # Don't include the raw values in the string.
@@ -382,6 +392,7 @@ class InertialMessage(Message):
             + str(self.__milliseconds) + c + str(self.__microseconds) + c \
             + str(self._creationTime) + c + str(self._creationTick)
         return iString
+    
     
     @property
     def magX(self):
@@ -498,37 +509,37 @@ class InertialMessage(Message):
     @property
     def microseconds(self):
         return self.__microseconds
-
+    
+    
 
 ###############################################################################
 # SPACIAL NAVIGATION MESSAGE(s): :
 ###############################################################################
 
 class SpacialMessage(Message):
-    """
-    Message parser for the spacial navigation controller.
-    """
+    """Message parser for the spacial navigation controller."""
     
     ID_SPACIAL = 's'
     
     def __init__(self, data, txCallback):
+        """Constructor."""
         # TODO: enable debug messages from the microcontroller, something like:
         # if data starts with 'DEBUG:' print message in the log, then return.
         Message.__init__(self, self.ID_SPACIAL, txCallback)
         data = data.strip()[2:].split(',')
         # Parse sonar sensor data:
-        self.__sonarFront   = data[0]
-        self.__sonarLeft    = data[1]
-        self.__sonarRight   = data[2]
-        self.__sonarBack    = data[3]
+        self.__sonarLeft = float(data[0])
+        self.__sonarFront = float(data[1])
+        self.__sonarRight = float(data[2])
+        self.__sonarBack = float(data[3])
         # Parse infrared sensor data:
-        self.__irDown  = data[4]
-        #self.__irLeft   = data[5]
-        #self.__irRight  = data[6]
-        #self.__irBack   = data[7]
+        self.__irDown  = float(data[4])
+        #self.__irLeft  = data[5]
+        #self.__irRight = data[6]
+        #self.__irBack  = data[7]
         # Encoder counter and motor status (faults):
-        self.__encoderCountsLeft  = data[5]
-        self.__encoderCountsRight = data[6]
+        self.__encoderCountsLeft  = int(data[5])
+        self.__encoderCountsRight = int(data[6])
         # Left motor status:
         self.__motorStatusLeft = int(data[7])
         self.__motorControlVariableLeft = self.__motorStatusLeft & 0xFF
@@ -543,20 +554,22 @@ class SpacialMessage(Message):
         self.__motorsRunMode = (self.__motorStatusRight >> 24) & 0xFF
         # TODO: extract the run mode and motors enabled status from motor status.
         # Remote control buttons:
-        self.__buttonA  = data[9]
-        self.__buttonB  = data[10]
-        self.__buttonC  = data[11]
-        self.__buttonD  = data[12]
+        self.__buttonA = int(data[9])
+        self.__buttonB = int(data[10])
+        self.__buttonC = int(data[11])
+        self.__buttonD = int(data[12])
         # Timestamps from the uController
-        self.__milliseconds = data[13]
-        self.__microseconds = data[14]
+        self.__milliseconds = int(data[13])
+        self.__microseconds = int(data[14])
         self._valid = True
         return
     
+    
     def toString(self):
+        """Turn the spacial message into a string."""
         c = ','
-        iString = c + self.ID_SPACIAL + c + str(self.__sonarFront) + c \
-            + str(self.__sonarLeft) + c + str(self.__sonarRight) + c \
+        iString = c + self.ID_SPACIAL + c + str(self.__sonarLeft) + c \
+            + str(self.__sonarFront) + c + str(self.__sonarRight) + c \
             + str(self.__sonarBack) + c + str(self.__irDown) + c \
             + str(self.__encoderCountsLeft) + c \
             + str(self.__encoderCountsRight) + c \
@@ -568,14 +581,15 @@ class SpacialMessage(Message):
             + str(self._creationTime) + c + str(self._creationTick)
         return iString
     
-    # Sonar sensor data:
-    @property
-    def sonarFront(self):
-        return self.__sonarFront
     
+    # Sonar sensor data:
     @property
     def sonarLeft(self):
         return self.__sonarLeft
+    
+    @property
+    def sonarFront(self):
+        return self.__sonarFront
     
     @property
     def sonarRight(self):
@@ -635,9 +649,6 @@ class SpacialMessage(Message):
     def motorStatusRight(self):
         return self.__motorStatusRight
     
-    
-    
-    
     @property
     def motorControlVariableRight(self):
         return self.__motorControlVariableRight
@@ -653,8 +664,6 @@ class SpacialMessage(Message):
     @property
     def motorsRunMode(self):
         return self.__motorsRunMode
-    
-    
     
     @property
     def buttonA(self):
@@ -679,17 +688,20 @@ class SpacialMessage(Message):
     @property
     def microseconds(self):
         return self.__microseconds
-
+    
+    
 
 ###############################################################################
 # CAMERA MESSAGE: target in view, target coordinates:
 ###############################################################################
 
 class CameraMessage(Message):
+    """Camera message class."""
     
     ID_CAMERA = 'c'
     
     def __init__(self, data, txCallback):
+        """Camera message constructor"""
         Message.__init__(self, self.ID_CAMERA, txCallback)
         if data[1] is not None:
             self.__targtColorVisible = data[1][0]
@@ -703,9 +715,12 @@ class CameraMessage(Message):
             self._valid = True
         else:
             self._valid = False
+        #time.sleep(0.025) # Sleep here to control frame rate.
         return
     
+    
     def toString(self):
+        """Turn the camera message into a string."""
         c = ','
         iString = c + self.ID_CAMERA \
             + c + str(self.__targtColorVisible) \
@@ -718,6 +733,7 @@ class CameraMessage(Message):
             + c + str(self.__targetCount) \
             + c + str(self._creationTime) + c + str(self._creationTick)
         return iString
+    
     
     @property
     def targtColorVisible(self):
@@ -751,14 +767,14 @@ class CameraMessage(Message):
     def targetCount(self):
         return self.__targetCount
     
+    
 
 ###############################################################################
 # IPC MANAGER :
 ###############################################################################
 
 class IpcManager(object):
-    """Class IPC manager, polls the controllers for data.
-    """
+    """Class IPC manager, polls the controllers for data."""
 
     RUN_SERVICE = True;
 
@@ -774,9 +790,6 @@ class IpcManager(object):
                       , SPATIAL_NAV : SpacialMessage
                       , GPS_NAV : GpsMessage 
                       , CAMERA : CameraMessage }
-    
-    # TODO: add camera handler? We may have to provide some
-    # abstraction layer to make look like a serial port.
     
     __messageQueue = Queue.Queue()
     
@@ -801,63 +814,73 @@ class IpcManager(object):
             self.__channel = cameras.CameraWrapper(port, configuration)
         # Add some identifying information from the init parameters.
         t = threading.Thread(name='ipc_manager' + port, target=self.reader)
+        t.daemon = True
         if self.__channel.isOpen():
             # Only start the reader thread if the port is open.
             t.start()
+        return
     
     
     def reader(self):
-        """ Read from the peripheral processor and enqueue its messages.
+        """Read from the peripheral processor and enqueue its messages. We 
+        also use this for image acquisition from a camera device. The idiom
+        is: readline == take picture.
         """
         logger.info('Starting')
         
         while self.RUN_SERVICE:
             data = self.__channel.readline()
-            
+            # Get the message constructor based on the message type.
             callback = self.__callbackTable.get(data[0], None)
             if callback is not None:
                 instance = callback(data, self.putMessage)
                 if instance.valid:
                     self.__messageQueue.put(instance)
                 else:
-                    #message = 'Received invalid message: ' + repr(data)
-                    #logger.info(message)
-                    #print message
-                    pass
+                    message = 'Received invalid message: ' + repr(data)
+                    logger.info(message)
+                    print message
             else:
-                #message = 'Received unknown message: ' + repr(data)
-                #logger.info(message)
-                #print message
-                pass
+                if not repr(data).startswith("'Received command:"):
+                    message = 'Received unknown message: ' + repr(data)
+                    logger.info(message)
+                    print message
+        
+        logger.info('IPC thread RUN_SERVIC = 0, closing channel.')
         self.__channel.close()
-        logger.info('Exiting')
+        logger.info('Channel closed')
         queueSize = self.__messageQueue.qsize()
         message = 'Messages in queue at exit: ' + str(queueSize)
         logger.info(message)
         print message
+        # End of thread's run loop.
         return
-        
+    
+    
     def messageAvaliable(self):
         """Predicate flag to indicate that the message queue contains messages.
         """
         return not self.__messageQueue.empty()
     
+    
     def getMessage(self):
-        """Dequeue a message.
-        """
+        """Dequeue a message."""
         #print self.__messageQueue.qsize()
         try:
             return self.__messageQueue.get(True, 10)
         except Exception, e:
             print e
+        return
+    
             
     def putMessage(self, data):
-        """Enqueue a message to send to a controller.
-        """
+        """Enqueue a message to send to a controller. Used as the txCallback
+        in message constructors."""
         #print self.__messageQueue.qsize()
         try:
             self.__channel.write(data)
         except Exception, e:
             print e
-
-        
+        return
+    
+    
