@@ -53,6 +53,7 @@ class Camera(object):
         self.__updateColorThresholds(self._hue, self._sat, self._val)
         
         self.__showWindow = False
+        self.__windowsInit = False
         
         # Set flag to save images on next frame, then it goes back to false.
         self.__saveImages = False
@@ -70,9 +71,9 @@ class Camera(object):
         # Number of triangular targets.
         self.__targetCount = 0
         # Turn this off for no X
-        
-        self.showImages(True)
+        #self.showImages(True)
         return
+    
     
     def __updateColorThresholds(self, hue, sat, val):
         """ Must have hue sat and val fields initialized.
@@ -179,10 +180,15 @@ class Camera(object):
             cv2.imwrite('res.jpg', res)
             
         if self.__showWindow == True:
-        # Show the frame after we annotate it.
+            if self.__windowsInit == False:
+                self.__setupImageWindows()
+            # Show the frame after we annotate it.
             cv2.imshow(self._frameName, frame)
             cv2.imshow(self._maskName, mask)
             cv2.imshow(self._resName, res)
+            #time.sleep(0.1)
+            #cv2.waitKey(25) # This causes a crash if running in a thread.
+            
         # Return: color visible, colorX, colorY, shape visible, shapeX, shapeY, scale, count 
         targetInfo = (self.__targetColorVisible
                     , self.__targetColorX
@@ -192,12 +198,12 @@ class Camera(object):
                     , self.__targetShapeY
                     , self.__targetScale
                     , self.__targetCount)
+        
         return targetInfo
     
     
     def __trackbarChanged(self, val):
-        """
-        Set the hue, saturation, and value and thresholds based on changing
+        """Set the hue, saturation, and value and thresholds based on changing
         the trackpbar sliders
         """
         
@@ -236,8 +242,7 @@ class Camera(object):
     
     
     def __colorsChanged(self, hue, sat, val):
-        """
-        Use this when we are not adjusting the trackbars to change the colors. 
+        """Use this when we are not adjusting the trackbars to change the colors. 
         """
         if hue - self._threshHue < 0:
             hue = self._threshHue
@@ -261,8 +266,7 @@ class Camera(object):
     
     
     def __setTrackbarPosColor(self, hue, sat, val):
-        """ Set the trackbar locations for HSV.
-        """
+        """ Set the trackbar locations for HSV."""
         cv2.setTrackbarPos('H', self._resName, hue)
         cv2.setTrackbarPos('S', self._resName, sat)
         cv2.setTrackbarPos('V', self._resName, val)
@@ -270,8 +274,7 @@ class Camera(object):
     
     
     def __setTrackbarPosThresh(self, tHue, tSat, tVal):
-        """ Set the trackbar locations for HSV thresholds.
-        """
+        """ Set the trackbar locations for HSV thresholds."""
         cv2.setTrackbarPos('HT', self._resName, tHue)
         cv2.setTrackbarPos('ST', self._resName, tSat)
         cv2.setTrackbarPos('VT', self._resName, tVal)
@@ -280,8 +283,7 @@ class Camera(object):
     
     # mouse callback function
     def __mouseCallback(self, event, x, y, flags, param):
-        """ Use the mouse to select colors.
-        """
+        """ Use the mouse to select colors."""
         if event != cv2.EVENT_MOUSEMOVE:
             # Store the image coordinates. 
             self.__colorX = x
@@ -291,18 +293,23 @@ class Camera(object):
     
     
     def showImages(self, show=True):
-        """ 
-        """
+        """"""
         self.__showWindow = show
-        if show == True:
+        return
+    
+    
+    def __setupImageWindows(self):
+        if self.__windowsInit == False:
             hue, sat, val = self._hue, self._sat, self._val
             tHue, tSat, tVal = self._threshHue, self._threshSat, self._threshVal
             # Conditionally start the window thread.
             cv2.startWindowThread()
+
             # Conditionally show windows.
             cv2.namedWindow(self._frameName, cv2.WINDOW_NORMAL)
             cv2.namedWindow(self._maskName, cv2.WINDOW_NORMAL)
             cv2.namedWindow(self._resName, cv2.WINDOW_NORMAL)
+            self.__windowsInit = True   
             if os.uname()[4][:3] != 'arm':
                 # Filter color
                 cv2.createTrackbar('H', self._resName, 0, 255, self.__trackbarChanged)
@@ -318,6 +325,7 @@ class Camera(object):
             
             cv2.setMouseCallback(self._frameName, self.__mouseCallback)
         return
+    
     
     def saveImages(self):
         # Save the images the next time a picture is taken.
@@ -453,7 +461,7 @@ class WebCamera(Camera):
     def close(self):
         """ Close the camera device.
         """
-        self._cap.release()
+        #self._cap.release()
         return
     
 
@@ -487,29 +495,42 @@ class CameraWrapper(object):
     
     
     def write(self, data):
-        # Used to acquire an image from the camera.
+        # Used to show the image viewer windows.
         if data == 'show':
+            print 'Camera Wrapper: Got show images command.'
             self.__device.showImages(True)
-            
-        if data == 'pic':
+        elif data == 'pic':
             print 'Camera Wrapper: Got picture taking command.'
+            self.__device.takePicture()
+        elif data == 'save':
+            print 'Camera Wrapper: Got save images command.'
             # Single shot, save an image.
             self.__device.saveImages()
         return
     
     
     def takePicture(self):
+        """Primary API call, image capture command"""
         # Used to acquire an image from the camera.
         return self.__device.takePicture()
     
     
-    def close(self):
-        self.__device.close()
+    def showImages(self, show=True):
+        """Set to true to setup image viewer windows and show images."""
+        self.__device.showImages(show)
         return
     
     
-    def showImages(self, show=True):
-        self.__device.showImages(show)
+    def saveImages(self, show=True):
+        """Save the next set of acquired images."""
+        self.__device.saveImages()
+        return
+    
+    
+    def close(self):
+        print 'Camera Wrapper: closing camera device.'
+        self.__device.close()
+        print 'Camera Wrapper: closed camera.'
         return
     
     
@@ -529,7 +550,7 @@ if __name__ == "__main__":
     cam = CameraWrapper('/dev/video0', (22, 128, 127, 10, 50, 127))
     cam.showImages(True)
     cam.readline()
-    #cam.close()
+    cam.close()
 
 
 
