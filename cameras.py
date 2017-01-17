@@ -54,6 +54,8 @@ class Camera(object):
         
         self.__showWindow = False
         self.__windowsInit = False
+        self.__returnImage = False
+        self.__imageData = None
         
         # Set flag to save images on next frame, then it goes back to false.
         self.__saveImages = False
@@ -188,7 +190,13 @@ class Camera(object):
             cv2.imshow(self._resName, res)
             #time.sleep(0.1)
             #cv2.waitKey(25) # This causes a crash if running in a thread.
-            
+        
+        if self.__returnImage:
+            self.__imageData = frame
+            self.__returnImage = False
+        else:
+            self.__imageData = None
+        
         # Return: color visible, colorX, colorY, shape visible, shapeX, shapeY, scale, count 
         targetInfo = (self.__targetColorVisible
                     , self.__targetColorX
@@ -197,7 +205,8 @@ class Camera(object):
                     , self.__targetShapeX
                     , self.__targetShapeY
                     , self.__targetScale
-                    , self.__targetCount)
+                    , self.__targetCount
+                    , self.__imageData)
         
         return targetInfo
     
@@ -299,7 +308,9 @@ class Camera(object):
     
     
     def __setupImageWindows(self):
+        print 'Setting up image window.'
         if self.__windowsInit == False:
+            print 'Initializing window controls.'
             hue, sat, val = self._hue, self._sat, self._val
             tHue, tSat, tVal = self._threshHue, self._threshSat, self._threshVal
             # Conditionally start the window thread.
@@ -324,6 +335,8 @@ class Camera(object):
                 self.__setTrackbarPosThresh(tHue, tSat, tVal)
             
             cv2.setMouseCallback(self._frameName, self.__mouseCallback)
+        else:
+            print 'Window is already initialized.'
         return
     
     
@@ -331,6 +344,13 @@ class Camera(object):
         # Save the images the next time a picture is taken.
         self.__saveImages = True
         return
+    
+    
+    def returnImage(self):
+        # Return the next frame as a field within the camera message.
+        self.__returnImage = True
+        return
+    
     
     @property
     def targetColorVisible(self):
@@ -461,7 +481,7 @@ class WebCamera(Camera):
     def close(self):
         """ Close the camera device.
         """
-        #self._cap.release()
+        self._cap.release()
         return
     
 
@@ -506,6 +526,10 @@ class CameraWrapper(object):
             print 'Camera Wrapper: Got save images command.'
             # Single shot, save an image.
             self.__device.saveImages()
+        elif data == 'return':
+            print 'Camera Wrapper: Got return image data command.'
+            # The next camera message will contain image data.
+            self.__device.returnImage()
         return
     
     
@@ -524,6 +548,12 @@ class CameraWrapper(object):
     def saveImages(self, show=True):
         """Save the next set of acquired images."""
         self.__device.saveImages()
+        return
+    
+    
+    def returnImage(self):
+        """Return the next image as a field in the message."""
+        self.__device.returnImage()
         return
     
     
@@ -550,7 +580,7 @@ if __name__ == "__main__":
     cam = CameraWrapper('/dev/video0', (22, 128, 127, 10, 50, 127))
     cam.showImages(True)
     cam.readline()
-    cam.close()
+    #cam.close()
 
 
 

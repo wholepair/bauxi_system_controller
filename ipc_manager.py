@@ -712,6 +712,8 @@ class CameraMessage(Message):
             self.__targetShapeY = data[1][5]
             self.__targetScale = data[1][6]
             self.__targetCount = data[1][7]
+            # Also get the image data if it is avaliable.
+            self.__imageData = data[1][8]
             self._valid = True
         else:
             self._valid = False
