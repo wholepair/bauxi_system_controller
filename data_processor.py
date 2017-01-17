@@ -72,7 +72,6 @@ class Configuration(object):
                             self.__threshSat = int(prop.text)
                         elif prop.tag == 'thresh_v':
                             self.__threshVal = int(prop.text)
-                # TODO: parse compass, accelerometer, and gyroscope settings.
             return
         
         @property
@@ -83,8 +82,8 @@ class Configuration(object):
         def filterProperties(self):
             return (self.__hue, self.__saturation, self.__value
                   , self.__threshHue, self.__threshSat, self.__threshVal)
+            
         
-    
     
     class Compass(object):
         """
@@ -98,8 +97,6 @@ class Configuration(object):
                 if type(child) == etree._Comment: continue
                 elif child.tag == 'declination':
                     self.__declination = float(child.text)
-                    
-            # TODO: parse compass, accelerometer, and gyroscope settings.
             return
         
         @property
@@ -117,7 +114,7 @@ class Configuration(object):
         Accelerometer:
         Gyroscope:
         """
-        f = open('config.xml')
+        f = open('configuration.xml')
         fileText = f.read()
         f.close()
         root = etree.fromstring(fileText)
@@ -137,8 +134,10 @@ class Configuration(object):
                 self.__compass = self.Compass(child)
             elif child.tag == 'encoder_counts_per_meter':
                 self.__encoderCountsPerMeter = float(child.text)
-            # TODO: parse accelerometer and gyroscope.
+            elif child.tag == 'mission':
+                self.__missionFile = child.text
         return
+    
     
     @property
     def portList(self):
@@ -157,16 +156,14 @@ class Configuration(object):
         
     @property
     def encoderCountsPerMeter(self):
-        """float.
-        """
+        """float."""
         return self.__encoderCountsPerMeter
-        
-class MissionFile(object):
-    """
-    List of coordinates and their properties, target 
-    """
-    pass
-
+    
+    @property
+    def missionFile(self):
+        """String, GPX file name, file contains the Lat/Lon route."""
+        return self.__missionFile
+    
 
 
 ###############################################################################
@@ -189,7 +186,14 @@ class DataProcessor(object):
     
     @property
     def gpsDataChanged(self):
+        """Flag to indicate the GPS data has changed to conditionally update
+        the GPS location, in the mission planner."""
         return self._gpsDataChanged
+    
+    @property
+    def missionFile(self):
+        """GPX file name, file contains lat/lon route information."""
+        return self._configuration.missionFile
     
     
     def __init__(self, parent=True, missionPlanner=None):

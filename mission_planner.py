@@ -112,14 +112,17 @@ class MissionLocations(object):
     
     @property
     def locationsUtm(self):
+        """Locations converted from Lant/Lon to UTM."""
         return self.__locationsUtm
     
     @property
     def locationsLatLon(self):
+        """Lat/Lon locations."""
         return self.__locationsLatLon
     
     @property
     def rteName(self):
+        """The route name, influences the name of the map image."""
         return self.__rteName
     
     
@@ -221,12 +224,6 @@ class MissionPlanner(object):
         # The start location type is the starting location.
         # The waypoint location type is an intermediate location, used to 
         # direct the robot away from hazards, etc..
-        # 
-        # Get the mission file and parse it.
-        loc = MissionLocations('mission.gpx')
-        self.__locations = loc.locationsUtm
-        self.__locationsLatLon = loc.locationsLatLon
-        self.__locationName = loc.rteName
         
         # The distance to the next/current location in the location list.
         self.__distanceToLocation = sys.maxint
@@ -267,17 +264,22 @@ class MissionPlanner(object):
         self.__turnAngle = 0.0
         self.__turnDirection = self.TURN_LEFT  # 0 is left, 1 is right.
         self.__motorSpeed = self.SPEED_MIN
-        
-        # The first location should be 0, but we don't have the spacial system 
-        # up and running so start by going to the next point.
-        self.__locationIndex = 1
-        logPrint('Current Goal Location: ' + repr(self.__locations[0]))
+
         self.__currentState = self.STATE_STARTUP
         logPrint('Setting current state to: STATE_STARTUP.')
         # We remain in the startup state until we get our first message. 
         # Then we transition to the STATE_SELF_TEST state.
         self.__dataProcessor = DataProcessor(parent=True, missionPlanner=self)
 
+        # Get the mission file and parse it.
+        loc = MissionLocations(self.__dataProcessor.missionFile)
+        self.__locations = loc.locationsUtm
+        self.__locationsLatLon = loc.locationsLatLon
+        self.__locationName = loc.rteName # Route name.
+        
+        self.__locationIndex = 1
+        logPrint('Current Goal Location: ' + repr(self.__locations[0]))
+        
         self.__autoAvoidTimer = TimeoutTimer()
         
         return
