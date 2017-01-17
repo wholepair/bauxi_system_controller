@@ -1,0 +1,53 @@
+<configuration>
+    <!-- Mission file, contains Lat/Lon: -->
+    <mission>mission.gpx</mission>
+    <!-- Port Configurations -->
+    <port>
+        <!--
+        <name>/dev/ttyACM0</name>
+        -->
+        <name>/dev/cu.usbmodem1A12111</name>
+        <rate>115200</rate>
+    </port>
+    <port>
+        <!--
+        <name>/dev/ttyACM1</name>
+        -->
+        <name>/dev/cu.usbmodem1A12131</name>
+        <rate>115200</rate>
+    </port>
+    <port>
+        <!--
+        <name>/dev/ttyUSB0</name>
+        -->
+        <name>/dev/cu.usbserial-FTE1AUNN</name>
+        <rate>57600</rate>
+    </port>
+    <!-- Encoder configuration section. Counts per meter: -->
+    <encoder_counts_per_meter>1000</encoder_counts_per_meter>
+    
+    <!-- Cammera configuration section -->
+    <camera>
+        <!-- Cammera device name: -->
+        <name>/dev/video0</name>
+        <!-- Alternate names are: /dev/video0, video1, etc.. -->
+        <color>
+            <!-- Use the HSV coror model to describe the target's color: -->
+            <hue>7</hue>
+            <saturation>207</saturation>
+            <value>113</value>
+            <!-- Threshold values for hue saturation and value: -->
+            <thresh_h>5</thresh_h>
+            <thresh_s>20</thresh_s>
+            <thresh_v>50</thresh_v>
+        </color>
+        <!-- Ultimately we want to store a set of SIFT/FAST keypoints to 
+         to describe the target's geometry: -->
+        <shape></shape>
+    </camera>
+    <!-- Compass configuration: -->
+    <compass>
+        <!-- The difference between magnetic north and true north: -->
+        <declination>10.5</declination>
+    </compass>
+</configuration>
