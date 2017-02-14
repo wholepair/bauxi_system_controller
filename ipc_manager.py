@@ -778,9 +778,9 @@ class CameraMessage(Message):
 class IpcManager(object):
     """Class IPC manager, polls the controllers for data."""
 
-    RUN_SERVICE = True;
+    __runService = True;
 
-    # Message type definitions:
+    # Message type ID's:
     INERTIAL_NAV = 'i'
     SPATIAL_NAV = 's'
     GPS_NAV = '$'
@@ -801,7 +801,8 @@ class IpcManager(object):
         if type(configuration) != tuple:
             # For the serial port, all we need is its name and baudrate.
             try:
-                self.__channel = serial.Serial(port, configuration)
+                baudrate = configuration
+                self.__channel = serial.Serial(port, baudrate, timeout=1)
                 if not self.__channel.isOpen():
                     message = "Can't open port: " + str(port), '. Aborting thread.'
                     logger.critical(message)
@@ -823,6 +824,11 @@ class IpcManager(object):
         return
     
     
+    def shutdown(self):
+        self.__runService = False
+        return
+    
+    
     def reader(self):
         """Read from the peripheral processor and enqueue its messages. We 
         also use this for image acquisition from a camera device. The idiom
@@ -830,8 +836,11 @@ class IpcManager(object):
         """
         logger.info('Starting')
         
-        while self.RUN_SERVICE:
+        while self.__runService:
             data = self.__channel.readline()
+            if len(data) == 0:
+                logger.info('Read timeout')
+                continue
             # Get the message constructor based on the message type.
             callback = self.__callbackTable.get(data[0], None)
             if callback is not None:
@@ -848,7 +857,7 @@ class IpcManager(object):
                     logger.info(message)
                     print message
         
-        logger.info('IPC thread RUN_SERVIC = 0, closing channel.')
+        logger.info('IPC thread __runService = False, closing channel.')
         self.__channel.close()
         logger.info('Channel closed')
         queueSize = self.__messageQueue.qsize()
