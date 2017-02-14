@@ -1,6 +1,6 @@
 """
 The mission planner interprets mission directives and state information
-in order to execute its mission.
+in order to execute the robot's mission.
 
 Directives include: way-points (mandatory and optional)
 
@@ -291,7 +291,7 @@ class MissionPlanner(object):
         return self.__messageSpacial.sonarFront < 40 \
             or self.__messageSpacial.sonarLeft < 20 \
             or self.__messageSpacial.sonarRight < 20
-        
+    
     
     def __selfTest(self):
         """Perform a subsystem self-test."""
@@ -300,16 +300,12 @@ class MissionPlanner(object):
         self.__failedStateCounter += 1
         if self.__failedStateCounter > self.FAILED_STATE_COUNT_LIMIT:
             self.__currentState = self.STATE_FAILED
-            logger.warning('Failed state counter exceeded failed state count limit')
+            logger.error('Failed state counter exceeded failed state count limit')
             logPrint('Setting current state to: STATE_FAILED.')
             print 'Failed state counter exceeded failed state count limit'
-            print 'Setting current state to: STATE_FAILED.'
             logPrint('Inertial System: ' + repr(self.__messageInertial))
             logPrint('GPS System: ' + repr(self.__messageGps))
             logPrint('Vision System: ' + repr(self.__messageVision))
-            print 'Inertial System:', self.__messageInertial
-            print 'GPS System:', self.__messageGps
-            print 'Vision System:', self.__messageVision
             stop()
         if self.__messageInertial is not None \
             and self.__messageVision is not None:
@@ -322,7 +318,7 @@ class MissionPlanner(object):
             self.setRunModeSpacial(self.SPACIAL_MODE_EXT_CONTROL)
         return
     
-      
+    
     def __normalOperation(self):
         """As we would expect, we'll spend most of our time here. 
         Control actuators, etc..
@@ -463,7 +459,7 @@ class MissionPlanner(object):
     def shutdown(self):
         """ Unload the mission planner,
         """
-        self.CURRENT_STATE = self.STATE_SHUTDOWN
+        self.__currentState = self.STATE_SHUTDOWN
         self.__dataProcessor.shutdown()
         return
     
@@ -797,11 +793,11 @@ class MissionPlanner(object):
     
     @property
     def currentState(self):
-        return self.CURRENT_STATE
+        return self.__currentState
     
     @property
     def currentStateName(self):
-        return self.STATE_NAMES[self.CURRENT_STATE]
+        return self.STATE_NAMES[self.__currentState]
     
     @property
     def messageSpacial(self):
