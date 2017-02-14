@@ -9,14 +9,11 @@ Created on Sep 27, 2015
 import cv2
 import numpy as np
 
-isPyCamera = False
 import os
 if os.uname()[4][:3] == 'arm':
     from picamera.array import PiRGBArray
     from picamera import PiCamera
-    isPyCamera = True
-else:
-    import cv # Used by x86 version?
+
 import time
 
 def getCvVersion():
@@ -134,12 +131,9 @@ class Camera(object):
         else:
             self.__targetColorVisible = False
             # Maybe also set the X and Y coords to -1 too.
-        if isPyCamera == True:
-            (_, contours, _) = cv2.findContours(mask.copy()
-                , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        else:
-            (contours, _) = cv2.findContours(mask.copy()
-                , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        (_, contours, _) = cv2.findContours(mask.copy()
+            , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         # Sort the contour list by area from smallest to largest so that
         # the coordinates of the last shape that matches will be kept.
@@ -452,8 +446,8 @@ class WebCamera(Camera):
         Camera.__init__(self, device, filterProperties)
         self._cap = cv2.VideoCapture(device)
         # http://stackoverflow.com/questions/11420748/setting-camera-parameters-in-opencv-python
-        self._cap.set(cv.CV_CAP_PROP_FRAME_WIDTH, 640)
-        self._cap.set(cv.CV_CAP_PROP_FRAME_HEIGHT, 480)
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         time.sleep(0.1)
         if not self._cap.isOpened():
             print "Cannot open camera!"
@@ -479,8 +473,9 @@ class WebCamera(Camera):
     
     
     def close(self):
-        """ Close the camera device.
+        """Release and close the camera device.
         """
+        print 'Releasing:', repr(self)
         self._cap.release()
         return
     
