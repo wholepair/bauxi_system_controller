@@ -175,7 +175,7 @@ class DataProcessor(object):
     """
     
     # Set to false to exit message processing threads.
-    RUN_SERVICE = True
+    __runService = True
     
     # Static, list of IPC managers
     __ipcManagers = []
@@ -254,10 +254,10 @@ class DataProcessor(object):
         """
         logger.info("Starting data processor.")
         __processingLoopEntered = True
-        while self.RUN_SERVICE:
+        while self.__runService:
             for m in self.__ipcManagers:
-                if not self.RUN_SERVICE:
-                    logger.info("Data processor RUN_SERVIC = 0.")
+                if not self.__runService:
+                    logger.info("Data processor run service = False")
                     break
                 # Check for None message type and skip process step.
                 message = m.getMessage()
@@ -282,8 +282,9 @@ class DataProcessor(object):
     
     def shutdown(self):
         # Stop all child threads and the parent thread.
-        ipc_manager.IpcManager.RUN_SERVICE = False
-        DataProcessor.RUN_SERVICE = False
+        for mgr in self.__ipcManagers:
+            mgr.shutdown()
+        self.__runService = False
         return
     
     
@@ -312,7 +313,7 @@ class InertialDataProcessor(DataProcessor):
     """
     Process sensor data messages in the context of a class that 'understands'
     the data and how to represent it to the mission_planner and visually via 
-    some graphical display (data visualization rather than data display).
+    some graphical display (data visualization rather than text data display).
     """
     DRAW_INTERVAL = 100
     
@@ -320,7 +321,7 @@ class InertialDataProcessor(DataProcessor):
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
         
-        self.__declanation = self._configuration.compass.declination
+        self.__declination = self._configuration.compass.declination
         self.__message = None
         #self.__plotter = plotter.Plotter()
         #self.__drawCounter = 0
@@ -431,23 +432,26 @@ class GpsDataProcessor(DataProcessor):
     def processMessage(self, message):
         # Process GPS messages. Compute northing and easting from lat/lon.
         """"""
-        lat = message.fields.latDegrees + message.fields.latMinutes / 60.0
-        if message.fields.nS == 'S':
-            lat *= -1
-        lon = message.fields.lonDegrees + message.fields.lonMinutes / 60.0
-        if message.fields.eW == 'W':
-            lon *= -1
+        lat = convertDegMinToDeg(message.fields.latDegrees
+                , message.fields.latMinutes, message.fields.nS)
+        
+        lon = convertDegMinToDeg(message.fields.lonDegrees
+                , message.fields.lonMinutes, message.fields.eW)
         
         self._messagesProcessedCount += 1
         if lat != self.__missionPlanner.lat or lon != self.__missionPlanner.lon:
             #print '\r%s, %s'%(round(lat, 4), round(lon, 4)),
             #sys.stdout.flush()
             self.__missionPlanner.updateGps(message, lat, lon)
+            self._gpsDataChanged = True
+        else:
+            self._gpsDataChanged = False
         
         # TODO: convert lat/lon to easting and northing (x, y) coordinates
         # in meters.
         logger.debug(message.toString())
         return
+    
 
 
 class CameraDataProcessor(DataProcessor):
@@ -486,31 +490,17 @@ class CameraDataProcessor(DataProcessor):
 
 
 # Some helper functions to convert between DD MM.MM to DD.DD..
-# I.e. degrees minutes to degrees  decimal degrees.
-def convertLatGpsToLatMaps(latDeg, latMin, nS):
-    lat = latDeg + latMin / 60.0
-    if nS == 'S':
-        lat *= -1
-    return lat
+# I.e. degrees minutes to degrees decimal degrees.
+def convertDegMinToDeg(degrees, minutes, direction):
+    degrees = degrees + minutes / 60.0
+    if direction == 'S' or direction == 'W':
+        degrees *= -1
+    return degrees
 
-
-def convertLonGpsToLonMaps(lonDeg, lonMin, eW):
-    lon = lonDeg + lonMin / 60.0
-    if eW == 'W':
-        lon *= -1
-    return lon
-
-
-def convertLatDmsToLatMaps(latDeg, latMin, latSec, nS):
-    lat = latDeg + latMin / 60.0 + latSec / 3600
-    if nS == 'S':
-        lat *= -1
-    return lat
-
-
-def convertLonDmsToLonMaps(lonDeg, lonMin, lonSec, eW):
-    lon = lonDeg + lonMin / 60.0 + lonSec / 3600
-    if eW == 'W':
-        lon *= -1
-    return lon
+# I.e. degrees minutes seconds to degrees decimal degrees.
+def convertDegMinSecToDeg(degrees, minutes, seconds, direction):
+    degrees = degrees + minutes / 60.0 + seconds / 3600
+    if direction == 'S' or direction == 'W':
+        degrees *= -1
+    return degrees
 

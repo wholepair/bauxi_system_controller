@@ -93,17 +93,17 @@ class Circle(object):
         pt3 = Point(V3)
         
         if not self.__isPerpendicular(pt1, pt2, pt3):
-            self.__calcCircle(pt1, pt2, pt3)    
+            self.__calcCircle(pt1, pt2, pt3)
         elif not self.__isPerpendicular(pt1, pt3, pt2):
-            self.__calcCircle(pt1, pt3, pt2)    
+            self.__calcCircle(pt1, pt3, pt2)
         elif not self.__isPerpendicular(pt2, pt1, pt3):
-            self.__calcCircle(pt2, pt1, pt3)    
+            self.__calcCircle(pt2, pt1, pt3)
         elif not self.__isPerpendicular(pt2, pt3, pt1):
-            self.__calcCircle(pt2, pt3, pt1)    
+            self.__calcCircle(pt2, pt3, pt1)
         elif not self.__isPerpendicular(pt3, pt2, pt1):
-            self.__calcCircle(pt3, pt2, pt1)    
+            self.__calcCircle(pt3, pt2, pt1)
         elif not self.__isPerpendicular(pt3, pt1, pt2):
-            self.__calcCircle(pt3, pt1, pt2)    
+            self.__calcCircle(pt3, pt1, pt2)
         else: 
             print "\nThe three points are perpendicular to axis\n"
             # pt1->trace(); pt2->trace(); pt3->trace();
