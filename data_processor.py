@@ -191,6 +191,11 @@ class DataProcessor(object):
         return self._gpsDataChanged
     
     @property
+    def encoderCountsPerMeter(self):
+        """Get the number of encoder counts per meter."""
+        return self._configuration.encoderCountsPerMeter
+    
+    @property
     def missionFile(self):
         """GPX file name, file contains lat/lon route information."""
         return self._configuration.missionFile
