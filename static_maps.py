@@ -26,12 +26,13 @@ class StaticMap(object):
         # image.
         self.__zoom = 18 
         self.__mapType = 'hybrid'
-        self.__show = False
         plot.ion()
         return
     
     
-    def getMapImage(self, currentLocation, missionLocations, mapName='location'):
+    def getMapImage(self, currentLocation, missionLocations, mapName='location'
+                    , showMap=False):
+        
         """Use the static maps API, add the waypoints to the map as markers,
         and return the image.
         """
@@ -82,7 +83,7 @@ class StaticMap(object):
         # Load an color image in grayscale
         img = cv2.imread(imageFileName, cv2.IMREAD_COLOR)
         
-        if not self.__show:
+        if showMap:
             plot.clf()
             # cmap = 'gray', # TODO: figure out what color map to use.
             plot.imshow(img, interpolation = 'bicubic')
