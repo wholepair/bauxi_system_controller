@@ -22,7 +22,7 @@ import data_processor
 from data_processor import DataProcessor
 from static_maps import StaticMap
 
-from debug_view import Ui_MainWindow
+#from debug_view import Ui_MainWindow
 
 logger = data_processor.logger
 
@@ -60,7 +60,7 @@ class TimeoutTimer(object):
     
         
     def checkTimeout(self):
-        """Return the number of tens of seconds until timeout.
+        """Return the number of of seconds until timeout.
         If the duration has not been elapsed, return a positive number, 
         otherwise the return value is negative."""
         return self.__timeout - time.clock()
@@ -216,9 +216,10 @@ class MissionPlanner(object):
     # TODO: get the horizontal resolution from the camera implementation.
     TURN_RATIO_VISION = 10.0 / (640 / 2.0)  
     
-    SPEED_MAX = 10.0
-    SPEED_MED = 7.0
-    SPEED_MIN = 4.0
+    SPEED_MAX = 220
+    SPEED_MED = 180
+    SPEED_MIN = 140
+    SPEED_STOP = 128
     SPEED_UPDATE_INTERVAL = 10
     
     LOCATION_TYPE_START = 'start'
@@ -373,7 +374,7 @@ class MissionPlanner(object):
             
             self.__motorSpeed = self.SPEED_MED
             if self.__targetVisible:
-                self.__currentMode = self.MODE_TARGET_TRACKING
+                self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
                 #print 'Turn angle:', self.__turnAngle, ', Turn direction:', self.__turnDirection 
                 turn = self.__turnAngle * self.TURN_RATIO_VISION
@@ -388,23 +389,24 @@ class MissionPlanner(object):
                     # Reset our vector location to the next one in the list. 
                     # We know exactly where we are because we contacted the target.
                     self.__utmVector = ()
-                    self.__currentMode = self.MODE_WAYPOINT_SEARCH
+                    self.setRunMode(self.MODE_WAYPOINT_SEARCH)
             else:
-                self.__currentMode = self.MODE_TARGET_SEARCH
+                self.setRunMode(self.MODE_TARGET_SEARCH)
                 self.__searchForTarget()
                 
-        if self.__currentMode == self.MODE_WAYPOINT_SEARCH \
+        if self.currentMode == self.MODE_WAYPOINT_SEARCH \
             and self.__checkAutoAvoidRequired():
             
-                self.setRunMode(self.MODE_AUTO_AVOID)
-                self.__autoAvoidTimer.resetTimeout(10.0) # 10 seconds.
+            self.setRunMode(self.MODE_AUTO_AVOID)
+            self.__autoAvoidTimer.resetTimeout(10.0) # 10 seconds.
         elif self.__autoAvoidTimer.checkTimeout() < 0:
             # Revert to mission planner control after a timeout.
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         
         #print 'Turn angle:', self.__turnAngle, ', Turn direction:', self.__turnDirection 
         if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0 \
-            and self.__currentMode != self.MODE_HALT:
+            and self.currentMode != self.MODE_HALT:
+            
             speedLeft = 0
             speedRight = 0
             if self.__turnDirection == self.TURN_LEFT:
@@ -425,7 +427,8 @@ class MissionPlanner(object):
             # Halt the robot
             logPrint('Exhausted locations to traverse, stopping.')
             self.setRunMode(self.MODE_HALT)
-            self.setMotorSpeed(0, 0)
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            self.__motorSpeed = self.SPEED_STOP
             self.shutdown()
         return  
     
@@ -550,12 +553,14 @@ class MissionPlanner(object):
         MODE_REMOTE_CONTROL = 5  # Control the robot with a remote control
         MODE_HALT = 6            # Stop all motion
         """
+        if mode == self.__currentMode:
+            return
         self.__currentMode = mode
         logPrint('Setting system controller mode: ' + self.MODE_NAMES[mode])
         # Set the run mode of the spacial controller
         if mode == self.MODE_AUTO_AVOID:
             self.__setRunModeSpacial(self.SPACIAL_MODE_AUTO_AVOID)
-        if mode == self.MODE_REMOTE_CONTROL:
+        elif mode == self.MODE_REMOTE_CONTROL:
             self.__setRunModeSpacial(self.SPACIAL_MODE_REMOTE_CONTROL)
         else:
             self.__setRunModeSpacial(self.SPACIAL_MODE_EXT_CONTROL)
@@ -658,7 +663,7 @@ class MissionPlanner(object):
             # Weigh the GPS position based on the number of satelites in view.
             gpsWeight = float(self.__messageGps.sat)
         # Weigh the vector position by the nearness to the last known target.
-        vectorWeight = 100.0 / self.__distanceFromLastTarget
+        vectorWeight = 100.0 / (self.__distanceFromLastTarget + 1)
         cX = (gX * gpsWeight + vX * vectorWeight) / (gpsWeight + vectorWeight)
         cY = (gY * gpsWeight + vY * vectorWeight) / (gpsWeight + vectorWeight)
         self.__positionConfidence = gpsWeight + vectorWeight
@@ -671,7 +676,9 @@ class MissionPlanner(object):
         # Calculate the distance between where we are and where we want to go.
         # For now this is all based off of GPS.
         gpsValid = False
-        if len(self.__utmGps) == 0:
+        gX = 0.0
+        gY = 0.0
+        if len(self.__utmGps) != 0:
             gpsValid = True
             gX = self.__utmGps[0]
             gY = self.__utmGps[1]
@@ -737,6 +744,8 @@ class MissionPlanner(object):
         # The targetVisible flag is already set in the updateVision function.
         self.__turnAngle = 10
         self.__turnDirection = self.TURN_LEFT
+        # We need to keep track of the distance we travel to look for the cone.
+        # We want to be able to give up after searching for a while.
         return
     
     
@@ -768,7 +777,8 @@ class MissionPlanner(object):
     
     
     def showDebug(self):
-        foo = Ui_MainWindow()
+        pass
+        #foo = Ui_MainWindow()
         
     
     def printDebug(self):

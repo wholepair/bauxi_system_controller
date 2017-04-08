@@ -802,7 +802,7 @@ class IpcManager(object):
             # For the serial port, all we need is its name and baudrate.
             try:
                 baudrate = configuration
-                self.__channel = serial.Serial(port, baudrate, timeout=1)
+                self.__channel = serial.Serial(port, baudrate, timeout=5)
                 if not self.__channel.isOpen():
                     message = "Can't open port: " + str(port), '. Aborting thread.'
                     logger.critical(message)
@@ -844,7 +844,11 @@ class IpcManager(object):
             # Get the message constructor based on the message type.
             callback = self.__callbackTable.get(data[0], None)
             if callback is not None:
-                instance = callback(data, self.putMessage)
+                try:
+                    instance = callback(data, self.putMessage)
+                except Exception, e:
+                    print e
+                    continue
                 if instance.valid:
                     self.__messageQueue.put(instance)
                 else:
