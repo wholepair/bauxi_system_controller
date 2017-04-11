@@ -3,24 +3,15 @@
     <mission>mission.gpx</mission>
     <!-- Port Configurations -->
     <port>
-        <!--
-        <name>/dev/ttyACM0</name>
-        -->
-        <name>/dev/cu.usbmodem1A12111</name>
-        <rate>115200</rate>
+        <name>/dev/serial/by-id/usb-FTDI_TTL232R-3V3_FTH7JURZ-if00-port0</name>
+        <rate>9600</rate>
     </port>
     <port>
-        <!--
-        <name>/dev/ttyACM1</name>
-        -->
-        <name>/dev/cu.usbmodem1A12131</name>
-        <rate>115200</rate>
+        <name>/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_010792E4-if00-port0</name>
+        <rate>57600</rate>
     </port>
     <port>
-        <!--
-        <name>/dev/ttyUSB0</name>
-        -->
-        <name>/dev/cu.usbserial-FTE1AUNN</name>
+        <name>/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_010793E6-if00-port0</name>
         <rate>57600</rate>
     </port>
     <!-- Encoder configuration section. Counts per meter: -->
@@ -41,7 +32,7 @@
             <thresh_s>20</thresh_s>
             <thresh_v>50</thresh_v>
         </color>
-        <!-- Ultimately we want to store a set of SIFT/FAST keypoints to 
+        <!-- Ultimately we want to store a set of SIFT/FAST keypoints to
          to describe the target's geometry: -->
         <shape></shape>
     </camera>

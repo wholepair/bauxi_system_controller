@@ -271,7 +271,8 @@ class DataProcessor(object):
                 # Update state in the mission planner.
         
         for p in self.__processors:
-            print p, 'messages processed:', p._messagesProcessedCount
+            message = str(p) + ' messages processed: ' + p._messagesProcessedCount
+            logger.info(message)
         logger.info("Stopped data processor.")
         return
     
@@ -342,7 +343,7 @@ class InertialDataProcessor(DataProcessor):
         
         self.__message = message
         
-        yaw = math.atan2(message.magY, message.magX)
+        yaw = message.heading
         
         if yaw < 0.0:
             yaw += 2.0 * math.pi

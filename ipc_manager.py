@@ -59,7 +59,7 @@ class Message(object):
     def txCallback(self):
         return self._txCallback
     
-    
+    # TODO: also centralize the millisecond and microsecond data members here.
 
 ###############################################################################
 # GPS MESSAGE(s): :
@@ -127,7 +127,7 @@ class GpsMessage(Message):
         def __init__(self, data):
             """Constructor"""
             # Name            | Example       | Units | Description
-            # --------------------------------------------------------------------
+            # ------------------------------------------------------------------
             # Message ID:     | $GPGGA        |       | GGA protocol header
             self.__Id   = data[0]
             # UTC Time:       | 053740.000    |       | hhmmss.sss
@@ -249,7 +249,7 @@ class GpsMessage(Message):
         
         
     
-    __messageTable = { GPS_GGA : GgaData }
+    __messageTable = { GPS_GGA : GgaData } # Add entries for new GPS messages.
     
     ID_GPS = 'g'
     
@@ -313,58 +313,28 @@ class InertialMessage(Message):
     
     def __init__(self, data, txCallback):
         """InertialMessage constructor."""
-        #if not data.startswith('$GPGGA'): break 
         Message.__init__(self, self.ID_INERTIAL, txCallback)
         data = data.strip()[2:].split(',')
-        # Raw sensor data:
-        self.__magX = float(data[0])
-        self.__magY = float(data[1])
-        self.__magZ = float(data[2])
-        self.__accX = int(data[3])
-        self.__accY = int(data[4])
-        self.__accZ = int(data[5])
-        self.__gyroX = float(data[6])
-        self.__gyroY = float(data[7])
-        self.__gyroZ = float(data[8])
-        # Signal conditioned data:
-        # Adjusted magnetic field data X
-        self.__adjMagX = float(data[9])
-        # Adjusted magnetic field data Y
-        self.__adjMagY = float(data[10])
-        # Heading
-        self.__heading = float(data[11])
-        # Accelerometer pitch
-        self.__accPitch = float(data[12])
-        # Accelerometer roll
-        self.__accRoll = float(data[13])
-        # Accelerometer speed X (integrated)
-        self.__accSpeedX = float(data[14])
-        # Accelerometer speed Y (integrated)
-        self.__accSpeedY = float(data[15])
-        # Accelerometer speed Z (integrated)
-        self.__accSpeedZ = float(data[16])
-        # Accelerometer distance X (integrated)
-        self.__accDistX = float(data[17])
-        # Accelerometer distance Y (integrated)
-        self.__accDistY = float(data[18])
-        # Accelerometer distance Z (integrated)
-        self.__accDistZ = float(data[19])
-        # Gyroscope degrees rotated X
-        self.__gyroDegreesX = float(data[20])
-        # Gyroscope degrees rotated Y
-        self.__gyroDegreesY = float(data[21])
-        # Gyroscope degrees rotated Z
-        self.__gyroDegreesZ = float(data[22])
-        # Status field
-        # Bit 0: in motion
-        # Bit 1: accelerometer and gyroscope are calibrated
-        # Bit 2: compass is calibrated
-        self.__status = int(data[23])
-        self.__inMotion = bool(self.__status & self.IN_MOTION)
-        self.__accelGyroCal = bool(self.__status & self.ACCEL_GYRO_CAL)
-        self.__compassCal = bool(self.__status & self.COMPASS_CAL)
-        self.__milliseconds = int(data[24])
-        self.__microseconds = int(data[25])
+        self.__heading = float(data[0])
+        self.__pitch = float(data[1])
+        self.__roll = float(data[2])
+        self.__speedX = float(data[3])
+        self.__speedY = float(data[4])
+        self.__speedZ = float(data[5])
+        self.__distX = float(data[6])
+        self.__distY = float(data[7])
+        self.__distZ = float(data[8])
+        self.__gyroX = float(data[9])
+        self.__gyroY = float(data[10])
+        self.__gyroZ = float(data[11])
+        self.__inMotion = bool(data[12])
+        self.__calSystem = int(data[13])
+        self.__calGyro = int(data[14])
+        self.__calAccel = int(data[15])
+        self.__calMag = int(data[16])
+        self.__temperature = int(data[17])
+        self.__milliseconds = int(data[18])
+        self.__microseconds = int(data[19])
         self._valid = True
         return
     
@@ -372,51 +342,61 @@ class InertialMessage(Message):
     def toString(self):
         """Turn the inertial measurement message into a string."""
         c = ','
+        
+        # Dont use this data until it is more accurate.
         """
-            # Don't include the raw values in the string.
-            + str(self.__magY) + c + str(self.__magZ) + c \
-            + str(self.__accX) + c + str(self.__accY) + c \
-            + str(self.__accZ) + c + str(self.__gyroX) + c \
-            + str(self.__gyroY) + c + str(self.__gyroZ) + c \
+        + c + str(self.__speedX) \
+        + c + str(self.__speedY) \
+        + c + str(self.__speedZ) \
+        + c + str(self.__distX) \
+        + c + str(self.__distY) \
+        + c + str(self.__distZ) \
         """
-        iString = c + self.ID_INERTIAL + c + str(self.__magX) + c \
-            + str(self.__adjMagX) + c + str(self.__adjMagY) + c \
-            + str(self.__heading) + c + str(self.__accPitch) + c \
-            + str(self.__accRoll) + c + str(self.__accSpeedX) + c \
-            + str(self.__accSpeedY) + c + str(self.__accSpeedZ) + c \
-            + str(self.__accDistX) + c + str(self.__accDistY) + c \
-            + str(self.__accDistZ) + c + str(self.__gyroDegreesX) + c \
-            + str(self.__gyroDegreesY) + c + str(self.__gyroDegreesZ) + c \
-            + str(self.__status) + c + str(self.__inMotion) + c \
-            + str(self.__accelGyroCal) + c + str(self.__compassCal) + c \
-            + str(self.__milliseconds) + c + str(self.__microseconds) + c \
-            + str(self._creationTime) + c + str(self._creationTick)
+        
+        iString = c + self.ID_INERTIAL \
+            + c + str(self.__heading) \
+            + c + str(self.__pitch) \
+            + c + str(self.__roll) \
+            + c + str(self.__inMotion) \
+            + c + str(self.__gyroX) \
+            + c + str(self.__gyroY) \
+            + c + str(self.__gyroZ) \
+            + c + str(self.__calSystem) \
+            + c + str(self.__calGyro) \
+            + c + str(self.__calAccel) \
+            + c + str(self.__calMag) \
+            + c + str(self.__temperature) \
+            + c + str(self.__milliseconds) \
+            + c + str(self.__microseconds) \
+            + c + str(self._creationTime) \
+            + c + str(self._creationTick)
+        
         return iString
     
     
     @property
-    def magX(self):
-        return self.__magX
+    def heading(self):
+        return self.__heading
     
     @property
-    def magY(self):
-        return self.__magY
+    def pitch(self):
+        return self.__pitch
     
     @property
-    def magZ(self):
-        return self.__magZ
+    def roll(self):
+        return self.__roll
     
     @property
-    def accX(self):
-        return self.__accX
+    def speedX(self):
+        return self.__speedX
     
     @property
-    def accY(self):
-        return self.__accY
+    def speedY(self):
+        return self.__speedY
     
     @property
-    def accZ(self):
-        return self.__accZ
+    def speedZ(self):
+        return self.__speedZ
     
     @property
     def gyroX(self):
@@ -431,76 +411,24 @@ class InertialMessage(Message):
         return self.__gyroZ
     
     @property
-    def adjMagX(self):
-        return self.__adjMagX
+    def calSystem(self):
+        return self.__calSystem
     
     @property
-    def adjMagY(self):
-        return self.__adjMagY
+    def calGyro(self):
+        return self.__calGyro
     
     @property
-    def heading(self):
-        return self.__heading
+    def calAccel(self):
+        return self.__calAccel
     
     @property
-    def accPitch(self):
-        return self.__accPitch
+    def calMag(self):
+        return self.__calMag
     
     @property
-    def accRoll(self):
-        return self.__accRoll
-    
-    @property
-    def accSpeedX(self):
-        return self.__accSpeedX
-    
-    @property
-    def accSpeedY(self):
-        return self.__accSpeedY
-    
-    @property
-    def accSpeedZ(self):
-        return self.__accSpeedZ
-    
-    @property
-    def accDistX(self):
-        return self.__accDistX
-    
-    @property
-    def accDistY(self):
-        return self.__accDistY
-    
-    @property
-    def accDistZ(self):
-        return self.__accDistZ
-    
-    @property
-    def gyroDegreesX(self):
-        return self.__gyroDegreesX
-    
-    @property
-    def gyroDegreesY(self):
-        return self.__gyroDegreesY
-    
-    @property
-    def gyroDegreesZ(self):
-        return self.__gyroDegreesZ
-    
-    @property
-    def status(self):
-        return self.__status
-    
-    @property
-    def inMotion(self):
-        return self.__inMotion
-    
-    @property
-    def accelGyroCal(self):
-        return self.__accelGyroCal
-    
-    @property
-    def compassCal(self):
-        return self.__compassCal
+    def temperature(self):
+        return self.__temperature
     
     @property
     def milliseconds(self):
@@ -528,39 +456,27 @@ class SpacialMessage(Message):
         Message.__init__(self, self.ID_SPACIAL, txCallback)
         data = data.strip()[2:].split(',')
         # Parse sonar sensor data:
-        self.__sonarLeft = float(data[0])
-        self.__sonarFront = float(data[1])
-        self.__sonarRight = float(data[2])
-        self.__sonarBack = float(data[3])
+        self.__sonarLeft = int(data[0])
+        self.__sonarFront = int(data[1])
+        self.__sonarRight = int(data[2])
+        self.__sonarBack = int(data[3])
         # Parse infrared sensor data:
-        self.__irDown  = float(data[4])
-        #self.__irLeft  = data[5]
-        #self.__irRight = data[6]
-        #self.__irBack  = data[7]
+        self.__irLeft  = int(data[4])
+        self.__irRight = int(data[5])
+        self.__irBack  = int(data[6])
+        # Parse bumper switch states
+        self.__bumperLeft  = int(data[7])
+        self.__bumperRight = int(data[8])
         # Encoder counter and motor status (faults):
-        self.__encoderCountsLeft  = int(data[5])
-        self.__encoderCountsRight = int(data[6])
+        self.__encoderCountsLeft  = int(data[9])
+        self.__encoderCountsRight = int(data[10])
         # Left motor status:
-        self.__motorStatusLeft = int(data[7])
-        self.__motorControlVariableLeft = self.__motorStatusLeft & 0xFF
-        self.__motorSetPointLeft = (self.__motorStatusLeft >> 8) & 0xFF
-        self.__motorProcessVariableLeft = (self.__motorStatusLeft >> 16) & 0xFF
-        self.__motorsEnabled = bool((self.__motorStatusLeft >> 24) & 0xFF)
-        # Right motor status:
-        self.__motorStatusRight = int(data[8])
-        self.__motorControlVariableRight = self.__motorStatusRight & 0xFF
-        self.__motorSetPointRight = (self.__motorStatusRight >> 8) & 0xFF
-        self.__motorProcessVariableRight = (self.__motorStatusRight >> 16) & 0xFF
-        self.__motorsRunMode = (self.__motorStatusRight >> 24) & 0xFF
-        # TODO: extract the run mode and motors enabled status from motor status.
-        # Remote control buttons:
-        self.__buttonA = int(data[9])
-        self.__buttonB = int(data[10])
-        self.__buttonC = int(data[11])
-        self.__buttonD = int(data[12])
+        self.__motorStatusLeft = int(data[11])
+        self.__motorStatusRight = int(data[12])
+        self.__motorsRunMode = int(data[13])
         # Timestamps from the uController
-        self.__milliseconds = int(data[13])
-        self.__microseconds = int(data[14])
+        self.__milliseconds = int(data[14])
+        self.__microseconds = int(data[15])
         self._valid = True
         return
     
@@ -568,17 +484,26 @@ class SpacialMessage(Message):
     def toString(self):
         """Turn the spacial message into a string."""
         c = ','
-        iString = c + self.ID_SPACIAL + c + str(self.__sonarLeft) + c \
-            + str(self.__sonarFront) + c + str(self.__sonarRight) + c \
-            + str(self.__sonarBack) + c + str(self.__irDown) + c \
-            + str(self.__encoderCountsLeft) + c \
-            + str(self.__encoderCountsRight) + c \
-            + str(self.__motorStatusLeft) + c \
-            + str(self.__motorStatusRight) + c \
-            + str(self.__buttonA) + c + str(self.__buttonB) + c \
-            + str(self.__buttonC) + c + str(self.__buttonD) + c \
-            + str(self.__milliseconds) + c + str(self.__microseconds) + c \
-            + str(self._creationTime) + c + str(self._creationTick)
+        iString = c + self.ID_SPACIAL \
+            + c + str(self.__sonarLeft) \
+            + c + str(self.__sonarFront) \
+            + c + str(self.__sonarRight) \
+            + c + str(self.__sonarBack) \
+            + c + str(self.__irLeft) \
+            + c + str(self.__irRight) \
+            + c + str(self.__irBack) \
+            + c + str(self.__bumperLeft) \
+            + c + str(self.__bumperRight) \
+            + c + str(self.__encoderCountsLeft) \
+            + c + str(self.__encoderCountsRight) \
+            + c + str(self.__motorStatusLeft) \
+            + c + str(self.__motorStatusRight) \
+            + c + str(self.__motorsRunMode) \
+            + c + str(self.__milliseconds) \
+            + c + str(self.__microseconds) \
+            + c + str(self._creationTime) \
+            + c + str(self._creationTick)
+        
         return iString
     
     
@@ -602,19 +527,23 @@ class SpacialMessage(Message):
     # Infrared sensor data:
     @property
     def irDown(self):
-        return self.__irDown
-    
-    @property
-    def irLeft(self):
         return self.__irLeft
     
     @property
-    def irRight(self):
+    def irLeft(self):
         return self.__irRight
     
     @property
-    def irBack(self):
+    def irRight(self):
         return self.__irBack
+    
+    @property
+    def irBack(self):
+        return self.__bumperLeft
+    
+    @property
+    def bumperRight(self):
+        return self.__bumperRight
     
     # Encoder counter and motor status (faults):
     @property
@@ -630,56 +559,12 @@ class SpacialMessage(Message):
         return self.__motorStatusLeft
     
     @property
-    def motorControlVariableLeft(self):
-        return self.__motorControlVariableLeft
-    
-    @property
-    def motorSetPointLeft(self):
-        return self.__motorSetPointLeft
-    
-    @property
-    def motorProcessVariableLeft(self):
-        return self.__motorProcessVariableLeft
-    
-    @property
-    def motorsEnabled(self):
-        return self.__motorsEnabled
-    
-    @property
     def motorStatusRight(self):
         return self.__motorStatusRight
     
     @property
-    def motorControlVariableRight(self):
-        return self.__motorControlVariableRight
-    
-    @property
-    def motorSetPointRight(self):
-        return self.__motorSetPointRight
-    
-    @property
-    def motorProcessVariableRight(self):
-        return self.__motorProcessVariableRight
-    
-    @property
     def motorsRunMode(self):
         return self.__motorsRunMode
-    
-    @property
-    def buttonA(self):
-        return self.__buttonA
-    
-    @property
-    def buttonB(self):
-        return self.__buttonB
-    
-    @property
-    def buttonC(self):
-        return self.__buttonC
-    
-    @property
-    def buttonD(self):
-        return self.__buttonD
     
     @property
     def milliseconds(self):
