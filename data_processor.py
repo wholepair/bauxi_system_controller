@@ -11,6 +11,8 @@ import ipc_manager
 logger = ipc_manager.logger
 #import plotter
 
+from data_visualizer import InertialVisualizer
+
 class Configuration(object):
     
     class Port(object):
@@ -271,7 +273,8 @@ class DataProcessor(object):
                 # Update state in the mission planner.
         
         for p in self.__processors:
-            message = str(p) + ' messages processed: ' + p._messagesProcessedCount
+            message = str(p) + ' messages processed: ' \
+                + str(p._messagesProcessedCount)
             logger.info(message)
         logger.info("Stopped data processor.")
         return
@@ -323,6 +326,8 @@ class InertialDataProcessor(DataProcessor):
     """
     DRAW_INTERVAL = 100
     
+    __inertialVisualizer = InertialVisualizer()
+        
     def __init__(self, missionPlanner):
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
@@ -342,56 +347,20 @@ class InertialDataProcessor(DataProcessor):
         #sys.stdout.flush()
         
         self.__message = message
-        
-        yaw = message.heading
-        
-        if yaw < 0.0:
-            yaw += 2.0 * math.pi
-            
-        if yaw > 2.0 * math.pi:
-            yaw -= 2.0 * math.pi
-            
-        yawRadians = yaw
-        yawDegrees = yaw * 180.0 / math.pi
+        yaw = 360.0 - message.heading - self.__declination
+        if yaw >= 360.0:
+            yaw = yaw - 360.0
+        elif yaw < 0.0:
+            yaw = yaw + 360.0
+        yawRadians = yaw / (180.0 / math.pi)
         
         #print yawRadians, yawDegrees
         self._messagesProcessedCount += 1
-        self.__missionPlanner.updateInertial(message, yawRadians, yawDegrees)
+        self.__missionPlanner.updateInertial(message, yawRadians, yaw)
         logger.debug(message.toString())
         
-        #x = message.accX
-        #y = message.accY
-        #z = message.accZ
-        #self.__plotter.addPoint(x, y, z, "accel")
-        #if self.__drawCounter > self.DRAW_INTERVAL:
-        #    self.__plotter.refreshPlot()
-        #    self.__drawCounter = 0
-        #else:
-        #    self.__drawCounter += 1
-        return
-    
-    
-    def convertToRadians(self):
-        """Convert the magnetic sensor data to radians.
-        Per the unit circle:
-        east = 0
-        north = pi / 2
-        west = pi
-        south = 3 * pi / 2
+        self.__inertialVisualizer.updateHeading(yaw)
         
-        Given this set of ratios, we convert the magnetic sensor value into
-        radians.
-        """
-        return
-    
-    
-    def convertToGravities(self):
-        """Convert accelerometer data to G's."""
-        return
-    
-    
-    def convertToRadiansPerSecond(self):
-        """ Convert rate gyro data to radians per second (or degrees...)."""
         return
     
     
@@ -424,8 +393,6 @@ class SpatialDataProcessor(DataProcessor):
         return
     
     
-
-import sys 
     
 class GpsDataProcessor(DataProcessor):
     
