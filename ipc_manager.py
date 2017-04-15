@@ -321,13 +321,13 @@ class InertialMessage(Message):
         self.__speedX = float(data[3])
         self.__speedY = float(data[4])
         self.__speedZ = float(data[5])
-        self.__distX = float(data[6])
-        self.__distY = float(data[7])
-        self.__distZ = float(data[8])
+        self.__distanceX = float(data[6])
+        self.__distanceY = float(data[7])
+        self.__distanceZ = float(data[8])
         self.__gyroX = float(data[9])
         self.__gyroY = float(data[10])
         self.__gyroZ = float(data[11])
-        self.__inMotion = bool(data[12])
+        self.__inMotion = bool(int(data[12]))
         self.__calSystem = int(data[13])
         self.__calGyro = int(data[14])
         self.__calAccel = int(data[15])
@@ -348,9 +348,9 @@ class InertialMessage(Message):
         + c + str(self.__speedX) \
         + c + str(self.__speedY) \
         + c + str(self.__speedZ) \
-        + c + str(self.__distX) \
-        + c + str(self.__distY) \
-        + c + str(self.__distZ) \
+        + c + str(self.__distanceX) \
+        + c + str(self.__distanceY) \
+        + c + str(self.__distanceZ) \
         """
         
         iString = c + self.ID_INERTIAL \
@@ -399,6 +399,18 @@ class InertialMessage(Message):
         return self.__speedZ
     
     @property
+    def distanceX(self):
+        return self.__distanceX
+    
+    @property
+    def distanceY(self):
+        return self.__distanceY
+    
+    @property
+    def distanceZ(self):
+        return self.__distanceZ
+    
+    @property
     def gyroX(self):
         return self.__gyroX
     
@@ -409,6 +421,10 @@ class InertialMessage(Message):
     @property
     def gyroZ(self):
         return self.__gyroZ
+    
+    @property
+    def inMotion(self):
+        return self.__inMotion
     
     @property
     def calSystem(self):
@@ -461,19 +477,19 @@ class SpacialMessage(Message):
         self.__sonarRight = int(data[2])
         self.__sonarBack = int(data[3])
         # Parse infrared sensor data:
-        self.__irLeft  = int(data[4])
+        self.__irLeft = int(data[4])
         self.__irRight = int(data[5])
-        self.__irBack  = int(data[6])
+        self.__irBack = int(data[6])
         # Parse bumper switch states
-        self.__bumperLeft  = int(data[7])
-        self.__bumperRight = int(data[8])
+        self.__bumperLeft = bool(int(data[7]))
+        self.__bumperRight = bool(int(data[8]))
         # Encoder counter and motor status (faults):
-        self.__encoderCountsLeft  = int(data[9])
+        self.__encoderCountsLeft = int(data[9])
         self.__encoderCountsRight = int(data[10])
         # Left motor status:
         self.__motorStatusLeft = int(data[11])
         self.__motorStatusRight = int(data[12])
-        self.__motorsRunMode = int(data[13])
+        self.__runMode = int(data[13])
         # Timestamps from the uController
         self.__milliseconds = int(data[14])
         self.__microseconds = int(data[15])
@@ -498,7 +514,7 @@ class SpacialMessage(Message):
             + c + str(self.__encoderCountsRight) \
             + c + str(self.__motorStatusLeft) \
             + c + str(self.__motorStatusRight) \
-            + c + str(self.__motorsRunMode) \
+            + c + str(self.__runMode) \
             + c + str(self.__milliseconds) \
             + c + str(self.__microseconds) \
             + c + str(self._creationTime) \
@@ -563,8 +579,8 @@ class SpacialMessage(Message):
         return self.__motorStatusRight
     
     @property
-    def motorsRunMode(self):
-        return self.__motorsRunMode
+    def runMode(self):
+        return self.__runMode
     
     @property
     def milliseconds(self):
