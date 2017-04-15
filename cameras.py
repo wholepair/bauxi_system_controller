@@ -155,7 +155,7 @@ class Camera(object):
                 self.__targetScale = area
                 cv2.polylines(frame, [approx], True, (0,255,255))
                 self.__targetCount += 1
-                
+            
             M = cv2.moments(cnt)
             if M['m00'] != 0:
                 cx, cy = int(M['m10'] / M['m00']), int(M['m01'] / M['m00'])
@@ -168,13 +168,14 @@ class Camera(object):
                 else:
                     cv2.circle(frame, (cx, cy), 3, (255, 0, 0), -1)
             
+        
         if self.__saveImages == True:
             self.__saveImages = False
             print 'Saving images: frame.jpg, mask.jpg, res.jpg.'
             cv2.imwrite('frame.jpg', frame)
             cv2.imwrite('mask.jpg', mask)
             cv2.imwrite('res.jpg', res)
-            
+        
         if self.__showWindow == True:
             if self.__windowsInit == False:
                 self.__setupImageWindows()
@@ -282,7 +283,7 @@ class Camera(object):
         cv2.setTrackbarPos('ST', self._resName, tSat)
         cv2.setTrackbarPos('VT', self._resName, tVal)
         return
-        
+    
     
     # mouse callback function
     def __mouseCallback(self, event, x, y, flags, param):
@@ -309,12 +310,12 @@ class Camera(object):
             tHue, tSat, tVal = self._threshHue, self._threshSat, self._threshVal
             # Conditionally start the window thread.
             cv2.startWindowThread()
-
+            
             # Conditionally show windows.
             cv2.namedWindow(self._frameName, cv2.WINDOW_NORMAL)
             cv2.namedWindow(self._maskName, cv2.WINDOW_NORMAL)
             cv2.namedWindow(self._resName, cv2.WINDOW_NORMAL)
-            self.__windowsInit = True   
+            self.__windowsInit = True
             if os.uname()[4][:3] != 'arm':
                 # Filter color
                 cv2.createTrackbar('H', self._resName, 0, 255, self.__trackbarChanged)
@@ -496,7 +497,7 @@ class CameraWrapper(object):
         if device == 'PiCamera':
             self.__device = RaspPiCamera(device, filterProperties)
         else:
-            self.__device = WebCamera(int(device[-1]), filterProperties)                        
+            self.__device = WebCamera(int(device[-1]), filterProperties)
         return
     
     

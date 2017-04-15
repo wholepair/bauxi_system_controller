@@ -177,7 +177,7 @@ class MissionPlanner(object):
     MODE_CALIBRATION = 3     # Calibrate inertial measurement subsystem.
     MODE_AUTO_AVOID = 4      # An obstacle is detected, allow subsystem to control
     MODE_REMOTE_CONTROL = 5  # Control the robot with a remote control
-    MODE_HALT = 5            # Stop all motion
+    MODE_HALT = 6            # Stop all motion
     
     MODE_NAMES = { MODE_UNKNOWN         : 'MODE_UNKNOWN'
                  , MODE_WAYPOINT_SEARCH : 'MODE_WAYPOINT_SEARCH'
@@ -211,6 +211,11 @@ class MissionPlanner(object):
     TURN_RIGHT = 1
     TURN_STRAIGHT = 2
     
+    TURN_DIRECTION_NAMES = { TURN_LEFT     : 'TURN_LEFT'
+                           , TURN_RIGHT    : 'TURN_RIGHT'
+                           , TURN_STRAIGHT : 'TURN_STRAIGHT'
+                           }
+    
     TURN_RATIO = 10.0 / 180.0
     
     # TODO: get the horizontal resolution from the camera implementation.
@@ -220,17 +225,31 @@ class MissionPlanner(object):
     SPEED_MED = 180
     SPEED_MIN = 140
     SPEED_STOP = 128
-    SPEED_UPDATE_INTERVAL = 10
+    SPEED_UPDATE_INTERVAL = 10 # Frequency of speed feedback to motor controller.
     
     LOCATION_TYPE_START = 'start'
     LOCATION_TYPE_WAYPOINT = 'waypoint'
     LOCATION_TYPE_TARGET = 'target'
-    LOCATION_TYPE_FINISH = 'finish' # Don't use this one.
+    LOCATION_TYPE_FINISH = 'finish' # Don't use this one. Why not?
     
-    # We always start at the start location :).
-    __curentLocationType = LOCATION_TYPE_START
-    
+    # Number of times all systems are not on line when processing a spacial 
+    # message before we are considered to be in a failed state.
     FAILED_STATE_COUNT_LIMIT = 100
+    
+    # Search patterns
+    SEARCH_PATTERN_NA = -1
+    SEARCH_PATTERN_1 = 0
+    SEARCH_PATTERN_2 = 1
+    SEARCH_PATTERN_3 = 2
+    
+    SEARCH_PATTERN_NAMES = { SEARCH_PATTERN_NA : "SEARCH_PATTERN_NA"
+                           , SEARCH_PATTERN_1 : 'SEARCH_PATTERN_1'
+                           , SEARCH_PATTERN_2 : 'SEARCH_PATTERN_2'
+                           , SEARCH_PATTERN_3 : 'SEARCH_PATTERN_3'
+                           }
+    
+    __currentSearchPattern = SEARCH_PATTERN_NA
+    TARGET_SEARCH_DISTANCE_LIMIT = 30 # Meters.
     
     __staticMap = StaticMap()
     
@@ -250,10 +269,15 @@ class MissionPlanner(object):
         self.__distanceFromLastTarget = 0
         # A boolean flag, True when the vision system has spotted the target.
         self.__targetVisible = False
+        self.__targetX = 0
+        self.__targetY = 0
         # The distance to the target, measured by the range sensor
         self.__distanceToTarget = sys.maxint
         self.__failedStateCounter = 0
         self.__spacialUpdateCounter = 0
+        
+        # How far we have driven in visual search of the target object.
+        self.__targetSearchDistance = 0
         
         self.__utmGps = ()
         self.__utmVector = ()
@@ -262,9 +286,10 @@ class MissionPlanner(object):
         self.__encoderCountsRight = 0
         self.__prevEncoderCountsLeft = 0
         self.__prevEncoderCountsRight = 0
+        self.__loopDisplacement = 0 # How far we moved this iteration.
         
         self.__averageHeading = 0.0
-        self.__prevAverageHeading = 0.0
+        self.__prevAverageHeading = -1.0
         self.__headingList = []
         
         self.__vectorPositionX = 0 # Position in meters, relative to the starting
@@ -281,9 +306,12 @@ class MissionPlanner(object):
         self.__headingDegrees = 0.0
         self.__headingRadians = 0.0
         self.__turnAngle = 0.0
-        self.__turnDirection = self.TURN_LEFT  # 0 is left, 1 is right.
+        self.__turnDirection = self.TURN_STRAIGHT  # 0 is left, 1 is right.
         self.__motorSpeed = self.SPEED_MIN
 
+        self.__compositeX = 0.0 # Composite location coordinates.
+        self.__compositeY = 0.0
+        
         self.__currentState = self.STATE_STARTUP
         logPrint('Setting current state to: STATE_STARTUP.')
         # We remain in the startup state until we get our first message. 
@@ -307,8 +335,8 @@ class MissionPlanner(object):
         logPrint('Current Goal Location: ' + repr(self.__locations[0]))
         
         self.__autoAvoidTimer = TimeoutTimer()
-        
         return
+    
     
     def __checkAutoAvoidRequired(self):
         """Check to see if we need to change modes from app control to 
@@ -364,12 +392,12 @@ class MissionPlanner(object):
         # If we are within a threshold distance from an intermediate location
         # then increment to the next location.
         goalLocation = self.__locations[self.__locationIndex]
-        locType = goalLocation[1][0]
+        currentLocationType = goalLocation[1][0]
         
-        if locType == self.LOCATION_TYPE_WAYPOINT \
+        if currentLocationType == self.LOCATION_TYPE_WAYPOINT \
             and self.__distanceToLocation <= self.THRESHOLD_LOCATION_DISTANCE: 
             self.__locationIndex += 1
-        elif locType == self.LOCATION_TYPE_TARGET \
+        elif currentLocationType == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
             
             self.__motorSpeed = self.SPEED_MED
@@ -381,19 +409,22 @@ class MissionPlanner(object):
                 if self.__distanceToTarget > 0 and self.__distanceToTarget < 30:
                     #logger.info('Approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
+                
                 # Change this criteria given bumper switches.
-                if self.__distanceToTarget > 0 and self.__distanceToTarget < 16.0:
+                if self.__messageSpacial.bumperLeft or self.__messageSpacial.bumperRight:
                     logPrint('Contacted target, incrementing location index.')
                     self.__locationIndex += 1
-                    self.__distanceFromLastTarget = 0
                     # Reset our vector location to the next one in the list. 
                     # We know exactly where we are because we contacted the target.
                     self.__utmVector = ()
+                    self.__distanceFromLastTarget = 0
                     self.setRunMode(self.MODE_WAYPOINT_SEARCH)
+                    self.__currentSearchPattern = self.SEARCH_PATTERN_NA
+                
             else:
                 self.setRunMode(self.MODE_TARGET_SEARCH)
                 self.__searchForTarget()
-                
+        
         if self.currentMode == self.MODE_WAYPOINT_SEARCH \
             and self.__checkAutoAvoidRequired():
             
@@ -430,7 +461,7 @@ class MissionPlanner(object):
             self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
             self.__motorSpeed = self.SPEED_STOP
             self.shutdown()
-        return  
+        return
     
     
     def updateSpacial(self, message):
@@ -467,7 +498,6 @@ class MissionPlanner(object):
         self.__headingList.append(yawRadians)
         
         #print yawDegrees
-        
         if len(self.__headingList) > 10:
             self.__headingList.remove(self.__headingList[0])
         return
@@ -613,7 +643,7 @@ class MissionPlanner(object):
             # the compass direction to produce a vector.
             deltaL = self.__encoderCountsLeft - self.__prevEncoderCountsLeft
             deltaR = self.__encoderCountsRight - self.__prevEncoderCountsRight
-            deltaCounts = (deltaL + deltaR) / 2.0
+            deltaCounts = (deltaL + deltaR) / 2.0 # Only works for skid steering.
             
             # Average the the headings in the heading list. Then clear it.
             # If the heading list is empty, then simply use the previous heading.
@@ -621,23 +651,23 @@ class MissionPlanner(object):
             for heading in self.__headingList:
                 headingSum += heading
             if len(self.__headingList) > 0:
-                averageHeading = headingSum / float(len(self.__headingList))                
+                averageHeading = headingSum / float(len(self.__headingList))
             # Average the current and previous heading if we only got a single
             # heading value.
-            if len(self.__headingList) == 1 and self.__prevAverageHeading != 0:
+            if len(self.__headingList) == 1 and self.__prevAverageHeading != -1.0:
                 averageHeading = (averageHeading + self.__prevAverageHeading) / 2.0
             self.__averageHeading = averageHeading
             # If we did not move, then we don't need to update this information.
             if deltaCounts == 0:
                 return
             # Convert the delta counts to meters.
-            deltaCounts *= self.__dataProcessor.encoderCountsPerMeter
-            self.__distanceFromLastTarget += deltaCounts
-            print 'Delta Counts: ', deltaCounts, ', Average Heading', averageHeading
+            deltaMeters = deltaCounts * self.__dataProcessor.encoderCountsPerMeter
+            self.__loopDisplacement = deltaMeters # How far we moved this iteration.
+            self.__distanceFromLastTarget += deltaMeters
+            print 'Delta Meters: ', deltaMeters, ', Average Heading', averageHeading
             # Add the X and Y values to the UTM vector values.
-            # TODO: convert to meters before assignment.
-            self.__vectorPositionX += deltaCounts * math.cos(averageHeading)
-            self.__vectorPositionY += deltaCounts * math.sin(averageHeading)
+            self.__vectorPositionX += deltaMeters * math.cos(averageHeading)
+            self.__vectorPositionY += deltaMeters * math.sin(averageHeading)
             
             # Assign a new updated tuple value to the spacial UTM variable.
             self.__utmVector = (self.__vectorPositionX, self.__vectorPositionY)
@@ -661,7 +691,7 @@ class MissionPlanner(object):
         gpsWeight = 0.0
         if gpsValid:
             # Weigh the GPS position based on the number of satelites in view.
-            gpsWeight = float(self.__messageGps.sat)
+            gpsWeight = float(self.__messageGps.fields.sat)
         # Weigh the vector position by the nearness to the last known target.
         vectorWeight = 100.0 / (self.__distanceFromLastTarget + 1)
         cX = (gX * gpsWeight + vX * vectorWeight) / (gpsWeight + vectorWeight)
@@ -701,9 +731,6 @@ class MissionPlanner(object):
     def __computeTurnDirection(self):
         """Given our current location and heading, compute the direction we 
         must turn to go towards the next location.
-        
-        Once again, this is currently based off of the vector system, we will 
-        eventually base these calculations off of the composite position.
         """
 
         
@@ -713,6 +740,8 @@ class MissionPlanner(object):
         heading = self.__headingDegrees
         angle = math.atan2(goalY - self.__compositeY, goalX - self.__compositeX)
 
+        angle *= 180.0 / math.pi;
+        
         if angle < 0.0:
             angle += 360.0
         # Now figure out which is the least angle between the direction we are 
@@ -737,15 +766,28 @@ class MissionPlanner(object):
             self.__turnDirection = self.TURN_STRAIGHT
         return turnAngle
     
-    # TODO: define search patterns, 
     
     def __searchForTarget(self):
         # Here we execute target search patterns, but for now, do nothing.
         # The targetVisible flag is already set in the updateVision function.
         self.__turnAngle = 10
-        self.__turnDirection = self.TURN_LEFT
-        # We need to keep track of the distance we travel to look for the cone.
-        # We want to be able to give up after searching for a while.
+        DISTANCE_LIMIT_DIVISION = self.TARGET_SEARCH_DISTANCE_LIMIT / 3.0
+        self.__targetSearchDistance += self.__loopDisplacement
+        if self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_1
+            self.__turnAngle = 0 # Go straight, keep going for a bit.
+            self.__turnDirection = self.TURN_STRAIGHT
+        elif self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION * 2:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_2
+            self.__turnDirection = self.TURN_LEFT
+        elif self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION * 3:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_3
+            self.__turnDirection = self.TURN_RIGHT
+        else:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_NA
+            logPrint('Giving up on target, incrementing location index.')
+            self.__locationIndex += 1
+            self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         return
     
     
@@ -779,81 +821,109 @@ class MissionPlanner(object):
     def showDebug(self):
         pass
         #foo = Ui_MainWindow()
-        
+        return
+    
     
     def printDebug(self):
         #print '\x1b[2J\x1b[H' # This clears the console apparently
-        print 'Inertial System Data:'
-        print '*********************'
-        print 'Magnetometer:'
-        print '-------------'
-        print 'Heading:', self.__messageInertial.heading
-        print 'Accelerometer:'
-        print '--------------'
-        print 'Pitch:  ', self.__messageInertial.accPitch
-        print 'Roll:   ', self.__messageInertial.accRoll
-        print 'Speed X:', self.__messageInertial.accSpeedX # First Integral
-        print 'Speed Y:', self.__messageInertial.accSpeedY
-        print 'Speed Z:', self.__messageInertial.accSpeedZ
-        print 'Dist X: ', self.__messageInertial.accDistX # Second Integral
-        print 'Dist Y: ', self.__messageInertial.accDistY
-        print 'Dist Z: ', self.__messageInertial.accDistZ
-        print 'Rate Gyroscope:'
-        print '---------------'
-        print 'Gyro X: ', self.__messageInertial.gyroDegreesX
-        print 'Gyro Y: ', self.__messageInertial.gyroDegreesY
-        print 'Gyro Z: ', self.__messageInertial.gyroDegreesZ
-        print 'Inertial System Status:'
-        print '-----------------------'
-        print 'In Motion:      ', self.__messageInertial.inMotion
-        print 'Accel Gyro Cal: ', self.__messageInertial.accelGyroCal
-        print 'Compass Cal:    ', self.__messageInertial.compassCal
+        print '==============================================================='
+        if self.__messageInertial is not None:
+            print '[ Inertial System Data: ]'
+            print '*************************'
+            print '<Magnetometer:>'
+            print '---------------'
+            print 'Heading:', self.__messageInertial.heading
+            print 'Pitch:  ', self.__messageInertial.pitch
+            print 'Roll:   ', self.__messageInertial.roll
+            """
+            print 'Speed X:', self.__messageInertial.speedX # First Integral
+            print 'Speed Y:', self.__messageInertial.speedY
+            print 'Speed Z:', self.__messageInertial.speedZ
+            print 'Distance X:', self.__messageInertial.distanceX # Second Integral
+            print 'Distance Y:', self.__messageInertial.distanceY
+            print 'Distance Z:', self.__messageInertial.distanceZ
+            print '<Rate Gyroscope:>'
+            print '-----------------'
+            print 'Gyro X: ', self.__messageInertial.gyroX
+            print 'Gyro Y: ', self.__messageInertial.gyroY
+            print 'Gyro Z: ', self.__messageInertial.gyroZ
+            """
+            print '<Inertial System Status:>'
+            print '-------------------------'
+            print 'In Motion:      ', self.__messageInertial.inMotion
+            print 'System Cal:     ', self.__messageInertial.calSystem
+            print 'Gyro Cal:       ', self.__messageInertial.calGyro
+            print 'Accel Cal:      ', self.__messageInertial.calAccel
+            print 'Compass Cal:    ', self.__messageInertial.calMag
+            print 'Temperature C:  ', self.__messageInertial.temperature
         
-        print 'Spacial System Data:'
-        print '********************'
-        print 'Sonar Distances (cm):'
-        print '---------------------'
-        print 'Sonar Left:  ', self.__messageSpacial.sonarLeft
-        print 'Sonar Front: ', self.__messageSpacial.sonarFront
-        print 'Sonar Right: ', self.__messageSpacial.sonarRight
-        print 'Sonar Back:  ', self.__messageSpacial.sonarBack
-        print 'Encoder Counts:'
-        print '---------------'
-        print 'Encoder Counts Left: ', self.__messageSpacial.encoderCountsLeft
-        print 'Encoder Counts Right:', self.__messageSpacial.encoderCountsRight
-        print 'Motor Status:'
-        print '-------------'
-        print 'Control Variable Left: ', self.__messageSpacial.motorControlVariableLeft
-        print 'Set Point Left:        ', self.__messageSpacial.motorSetPointLeft
-        print 'Process Variable Left  ', self.__messageSpacial.motorProcessVariableLeft
-        print 'Control Variable Right: ', self.__messageSpacial.motorControlVariableRight
-        print 'Set Point Right:        ', self.__messageSpacial.motorSetPointRight
-        print 'Process Variable Right: ', self.__messageSpacial.motorProcessVariableRight
-        print 'Motors Run Mode:     ', self.SPACIAL_MODE_NAMES[self.__messageSpacial.motorsRunMode]
-        print 'Motors Enabled:      ', self.__messageSpacial.motorsEnabled
+        if self.__messageSpacial is not None:
+            print '[ Spacial System Data: ]'
+            print '************************'
+            print '<Sonar Distances (cm):>'
+            print '-----------------------'
+            print 'Sonar Left:  ', self.__messageSpacial.sonarLeft
+            print 'Sonar Front: ', self.__messageSpacial.sonarFront
+            print 'Sonar Right: ', self.__messageSpacial.sonarRight
+            print 'Sonar Back:  ', self.__messageSpacial.sonarBack
+            print '<Infrared Distances (cm):>'
+            print '--------------------------'
+            print 'IR Left:  ', self.__messageSpacial.irLeft
+            print 'IR Right: ', self.__messageSpacial.irRight
+            print 'IR Back:  ', self.__messageSpacial.irBack
+            print '<Bumper Switch States:>'
+            print '-----------------------'
+            print 'Bumper Left:  ', self.__messageSpacial.bumperLeft
+            print 'Bumper Right: ', self.__messageSpacial.bumperRight
+            print '<Encoder Counts:>'
+            print '-----------------'
+            print 'Encoder Counts Left:  ', self.__messageSpacial.encoderCountsLeft
+            print 'Encoder Counts Right: ', self.__messageSpacial.encoderCountsRight
+            print '<Motor Status:>'
+            print '---------------'
+            print 'Motor Status Left:  ', self.__messageSpacial.motorStatusLeft
+            print 'Motor Status Right: ', self.__messageSpacial.motorStatusRight
+            print 'Run Mode  ', self.__messageSpacial.motorsRunMode
         
-        print 'Vector Position Data:'
-        print '*********************'
-        print 'Vector Position X: ', self.__vectorPositionX
-        print 'Vector Position Y: ', self.__vectorPositionY
-        
-        print 'Camera Tracking Data:'
-        print '*********************'
+        print '[ Camera Tracking Data: ]'
+        print '*************************'
         print 'Target Visible: ', self.__targetVisible
         print 'Target X: ', self.__targetX
         print 'Target Y: ', self.__targetY
+        print 'Distance to Target: ', self.__distanceToTarget
         
-        print 'GPS Position Data:'
-        print '******************'
+        print '[ GPS Position Data: ]'
+        print '**********************'
         print 'Latitude:  ', self.__lat
         print 'Longitude: ', self.__lon
         print 'UTM:  ', repr(self.__utmGps)
         
-        print 'Composite Values:'
-        print '******************'
-        print 'Turn Direction: ', self.__turnDirection
+        print '[ Vector Position Data: ]'
+        print '*************************'
+        print 'Vector Position X: ', self.__vectorPositionX
+        print 'Vector Position Y: ', self.__vectorPositionY
+        
+        print '[ Composite Values: ]'
+        print '*********************'
+        print 'Turn Direction: ', self.TURN_DIRECTION_NAMES[self.__turnDirection]
         print 'Turn Magnitude: ', self.__turnAngle
         print 'Speed:  ', self.__motorSpeed
+        print 'Distance to waypoint:', self.__distanceToLocation
+        print 'Composite X:', self.__compositeX
+        print 'Composite Y:', self.__compositeY
+        
+        print '[ System Status: ]'
+        print '******************'
+        print 'System State: ', self.currentStateName
+        print 'System Mode:  ', self.currentModeName
+        print 'Spacial Mode: ', self.currentSpacialModeName
+        print 'Current Waypoint Index: ', self.__locationIndex
+        print 'Current Waypoint: ', self.__locations[self.__locationIndex]
+        print 'Speed:  ', self.__motorSpeed
+        print 'Search Pattern:  ', self.SEARCH_PATTERN_NAMES[self.__currentSearchPattern]
+        print 'Search Distance:  ', self.__targetSearchDistance
+        
+        # TODO: print meters traveled GPS and Vector.
         return
     
     
@@ -883,6 +953,10 @@ class MissionPlanner(object):
         return self.MODE_NAMES[self.__currentMode]
     
     @property
+    def currentSpacialModeName(self):
+        return self.SPACIAL_MODE_NAMES[self.__currentSpacialMode]
+    
+    @property
     def messageSpacial(self):
         return self.__messageSpacial
     
@@ -899,7 +973,7 @@ class MissionPlanner(object):
         return self.__messageVision
     
     
-    
+
 ###############################################################################
 # Basic commands accessable from the command line
 ###############################################################################
@@ -908,26 +982,31 @@ def start():
     # Instantiate the data processor as the parent thread.
     mp = MissionPlanner()
     return mp
-    
+
+
 if __name__ == "__main__":
     # Instantiate the data processor as the parent.
     # TODO: parse argv for configuration file name and pass it to.
     mp = start()
-    
+
+
 def stop():
     mp.shutdown()
     return
+
 
 def showMap():
     mp.showMap(True)
     #t = Timer(1.0, show)
     #t.start() 
     return
-    
+
+
 def stat():
     # TODO: print the status of the system.
     pass
     return
+
 
 def pic():
     # Take a picture and display it.
@@ -935,11 +1014,6 @@ def pic():
     mp.saveImages()
     return
 
-def magY():
-    # Take a picture and display it.
-    #dp.sendMessage('c:p:' + int(show) + ';')
-    mp.printMag(1)
-    return
 
 def setSpeed(speedLeft=0, speedRight=0):
     # Set the left motor speed:
@@ -947,7 +1021,9 @@ def setSpeed(speedLeft=0, speedRight=0):
     return
 
 
-# Mode list:
+# Normal operating modes, may also be used in the development state:
+# Modes are externally visible behavior modes. 
+MODE_UNKNOWN = -1
 MODE_WAYPOINT_SEARCH = 0 # Use vector navigation and GPS, move to waypoint. 
 MODE_TARGET_SEARCH = 1   # Looking for a target object (visual search)
 MODE_TARGET_TRACKING = 2 # Target is visually acquired, track it.
@@ -970,24 +1046,25 @@ def turn(speed, direction):
     setSpeed(speedLeft, speedRight)
     return
 
-def magX():
-    mp
-    return
-
 def showCamera():
     mp.showCamera()
     return
 
 def showDebug():
+    """Show the debug UI, not implemented"""
     mp.showDebug()
     return
 
+# TODO: enable conditional printing of debug data.
+printDebugInertial = True
+printDebugSpacial = True
+
 def printDebug(period=0):
+    # Period in seconds.
     while True:
         mp.printDebug()
         if period == 0: break
-        time.sleep(period)
+        time.sleep(period) # Sleep in seconds.
     return
 
 
-    
