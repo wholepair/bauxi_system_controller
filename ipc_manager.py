@@ -542,19 +542,19 @@ class SpacialMessage(Message):
     
     # Infrared sensor data:
     @property
-    def irDown(self):
+    def irLeft(self):
         return self.__irLeft
     
     @property
-    def irLeft(self):
+    def irRight(self):
         return self.__irRight
     
     @property
-    def irRight(self):
+    def irBack(self):
         return self.__irBack
     
     @property
-    def irBack(self):
+    def bumperLeft(self):
         return self.__bumperLeft
     
     @property
