@@ -199,7 +199,6 @@ class MissionPlanner(object):
     SPACIAL_MODE_NAMES = { SPACIAL_MODE_AUTO_AVOID     : 'SPACIAL_MODE_AUTO_AVOID'
                          , SPACIAL_MODE_EXT_CONTROL    : 'SPACIAL_MODE_EXT_CONTROL'
                          , SPACIAL_MODE_REMOTE_CONTROL : 'SPACIAL_MODE_REMOTE_CONTROL'
-                         , SPACIAL_MODE_REMOTE_CONTROL : 'SPACIAL_MODE_REMOTE_CONTROL'
                          }
     
     __currentSpacialMode = SPACIAL_MODE_EXT_CONTROL
@@ -883,7 +882,7 @@ class MissionPlanner(object):
             print '---------------'
             print 'Motor Status Left:  ', self.__messageSpacial.motorStatusLeft
             print 'Motor Status Right: ', self.__messageSpacial.motorStatusRight
-            print 'Run Mode  ', self.__messageSpacial.motorsRunMode
+            print 'Run Mode  ', self.__messageSpacial.runMode
         
         print '[ Camera Tracking Data: ]'
         print '*************************'
