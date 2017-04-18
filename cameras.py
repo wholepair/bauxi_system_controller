@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 import os
+
 if os.uname()[4][:3] == 'arm':
     from picamera.array import PiRGBArray
     from picamera import PiCamera
@@ -41,13 +42,13 @@ class Camera(object):
         
         self._hue = filterProperties[0]
         self._sat = filterProperties[1]
-        self._val = filterProperties[2]
+        self._brt = filterProperties[2]
         
         self._threshHue = filterProperties[3]
         self._threshSat = filterProperties[4]
-        self._threshVal = filterProperties[5]
+        self._threshBrt = filterProperties[5]
         
-        self.__updateColorThresholds(self._hue, self._sat, self._val)
+        self.__updateColorThresholds()
         
         self.__showWindow = False
         self.__windowsInit = False
@@ -74,21 +75,48 @@ class Camera(object):
         return
     
     
-    def __updateColorThresholds(self, hue, sat, val):
-        """ Must have hue sat and val fields initialized.
+    def __clampColorComponent(self, component, threshold, name):
+        clamped = True
+        if component - threshold < 0:
+            print name, 'minus threshold < 0, clamping value:', component,
+            component = threshold
+            print ',', name, 'is now', component, ', threshold', threshold
+        elif component + threshold > 255:
+            print name, " plus threshold > 255, clamping value:", component,
+            component = 255 - threshold
+            print ',', name, 'is now', component, ', threshold', threshold
+        else:
+            clamped = False
+        return component, clamped
+    
+    
+    def __updateColorThresholds(self):
+        """ Must have hue sat and brt fields initialized.
         """
-        self._hue = hue
-        self._sat = sat
-        self._val = val
-        # define range of color in HSV
-        self._lowerColor = np.array([hue - self._threshHue
-                                   , sat - self._threshSat
-                                   , val - self._threshVal])
+        self._hue, ch = self.__clampColorComponent(self._hue
+                , self._threshHue, "hue")
         
-        self._upperColor = np.array([hue + self._threshHue
-                                   , sat + self._threshSat
-                                   , val + self._threshVal])
-        return
+        self._sat, cs = self.__clampColorComponent(self._sat
+                , self._threshSat, "saturation")
+        
+        self._brt, cv = self.__clampColorComponent(self._brt
+                , self._threshHue, "brightness")
+        
+        print 'New HSB:', self._hue, self._sat, self._brt
+        print 'HSB Thresholds:', self._threshHue, self._threshSat, self._threshBrt
+        
+        # define range of color in HSV
+        self._lowerColor = np.array([self._hue - self._threshHue
+                                   , self._sat - self._threshSat
+                                   , self._brt - self._threshBrt])
+        
+        self._upperColor = np.array([self._hue + self._threshHue
+                                   , self._sat + self._threshSat
+                                   , self._brt + self._threshBrt])
+        
+        print "Filter upper bounds:", self._upperColor
+        print "Filter lower bounds:", self._lowerColor
+        return ch or cs or cv # If we moved a component, we need to update UI.
     
     
     def _findTarget(self, frame):
@@ -99,18 +127,17 @@ class Camera(object):
             blue = int(frame[self.__colorY][self.__colorX][0])
             green = int(frame[self.__colorY][self.__colorX][1])
             red = int(frame[self.__colorY][self.__colorX][2])
-            colorHsv = yuvToRgb(red, green, blue)[0][0]
-            self._hue, self._sat, self._val = colorHsv
+            colorHsb = rgbToHsb(red, green, blue)[0][0]
+            self._hue, self._sat, self._brt = colorHsb
             print 'X, Y:', self.__colorX, self.__colorY
             print 'New RGB:', red, green, blue
-            print 'New HSV:', self._hue, self._sat, self._val
             cv2.circle(frame,(self.__colorX, self.__colorY), 20, (blue,green,red), -1)
             if os.uname()[4][:3] != 'arm':
                 # Setting the positions also updates HSV.
-                self.__setTrackbarPosColor(self._hue, self._sat, self._val)
+                self.__setTrackbarPosColor()
                 self.__trackbarChanged(None)
             else:
-                self.__colorsChanged(self._hue, self._sat, self._val)
+                self.__updateColorThresholds()
             
         hsvImage = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         # Threshold the HSV image to get only orange colors
@@ -213,75 +240,33 @@ class Camera(object):
         
         self._hue = cv2.getTrackbarPos('H', self._resName)
         self._sat = cv2.getTrackbarPos('S', self._resName)
-        self._val = cv2.getTrackbarPos('V', self._resName)
+        self._brt = cv2.getTrackbarPos('B', self._resName)
     
         self._threshHue = cv2.getTrackbarPos('HT', self._resName)
         self._threshSat = cv2.getTrackbarPos('ST', self._resName)
-        self._threshVal = cv2.getTrackbarPos('VT', self._resName)
-    
-        hue, sat, val = self._hue, self._sat, self._val
+        self._threshBrt = cv2.getTrackbarPos('BT', self._resName)
         
-        if hue - self._threshHue < 0:
-            hue = self._threshHue
-        elif hue + self._threshHue > 255:
-            hue -= 255 - hue
-            
-        if sat - self._threshSat < 0:
-            sat = self._threshSat
-        elif sat + self._threshSat > 255:
-            sat -= 255 - sat
-         
-        if val - self._threshVal < 0:
-            val = self._threshVal
-        elif val + self._threshVal > 255:
-            val -= 255 - val
+        clamped = self.__updateColorThresholds()
         
-        if hue != self._hue or sat != self._sat or val != self._val:
-            self.__setTrackbarPosColor(hue, sat, val)
+        if clamped:
+            self.__setTrackbarPosColor()
         
-        print 'New HSV:', hue, sat, val
-        print 'New HSV Thresholds:', self._threshHue, self._threshSat, self._threshVal
-        self.__updateColorThresholds(hue, sat, val)
         return
     
     
-    def __colorsChanged(self, hue, sat, val):
-        """Use this when we are not adjusting the trackbars to change the colors. 
-        """
-        if hue - self._threshHue < 0:
-            hue = self._threshHue
-        elif hue + self._threshHue > 255:
-            hue -= 255 - hue
-            
-        if sat - self._threshSat < 0:
-            sat = self._threshSat
-        elif sat + self._threshSat > 255:
-            sat -= 255 - sat
-         
-        if val - self._threshVal < 0:
-            val = self._threshVal
-        elif val + self._threshVal > 255:
-            val -= 255 - val
-        
-        print 'New HSV:', hue, sat, val
-        print 'New HSV Thresholds:', self._threshHue, self._threshSat, self._threshVal
-        self.__updateColorThresholds(hue, sat, val)
-        return
-    
-    
-    def __setTrackbarPosColor(self, hue, sat, val):
+    def __setTrackbarPosColor(self):
         """ Set the trackbar locations for HSV."""
-        cv2.setTrackbarPos('H', self._resName, hue)
-        cv2.setTrackbarPos('S', self._resName, sat)
-        cv2.setTrackbarPos('V', self._resName, val)
+        cv2.setTrackbarPos('H', self._resName, self._hue)
+        cv2.setTrackbarPos('S', self._resName, self._sat)
+        cv2.setTrackbarPos('B', self._resName, self._brt)
         return
     
     
-    def __setTrackbarPosThresh(self, tHue, tSat, tVal):
+    def __setTrackbarPosThresh(self):
         """ Set the trackbar locations for HSV thresholds."""
-        cv2.setTrackbarPos('HT', self._resName, tHue)
-        cv2.setTrackbarPos('ST', self._resName, tSat)
-        cv2.setTrackbarPos('VT', self._resName, tVal)
+        cv2.setTrackbarPos('HT', self._resName, self._threshHue)
+        cv2.setTrackbarPos('ST', self._resName, self._threshSat)
+        cv2.setTrackbarPos('BT', self._resName, self._threshBrt)
         return
     
     
@@ -306,8 +291,6 @@ class Camera(object):
         print 'Setting up image window.'
         if self.__windowsInit == False:
             print 'Initializing window controls.'
-            hue, sat, val = self._hue, self._sat, self._val
-            tHue, tSat, tVal = self._threshHue, self._threshSat, self._threshVal
             # Conditionally start the window thread.
             cv2.startWindowThread()
             
@@ -320,14 +303,14 @@ class Camera(object):
                 # Filter color
                 cv2.createTrackbar('H', self._resName, 0, 255, self.__trackbarChanged)
                 cv2.createTrackbar('S', self._resName, 0, 255, self.__trackbarChanged)
-                cv2.createTrackbar('V', self._resName, 0, 255, self.__trackbarChanged)
+                cv2.createTrackbar('B', self._resName, 0, 255, self.__trackbarChanged)
                 # Filter color
                 cv2.createTrackbar('HT', self._resName, 0, 127, self.__trackbarChanged)
                 cv2.createTrackbar('ST', self._resName, 0, 127, self.__trackbarChanged)
-                cv2.createTrackbar('VT', self._resName, 0, 127, self.__trackbarChanged)
+                cv2.createTrackbar('BT', self._resName, 0, 127, self.__trackbarChanged)
                 
-                self.__setTrackbarPosColor(hue, sat, val)
-                self.__setTrackbarPosThresh(tHue, tSat, tVal)
+                self.__setTrackbarPosColor()
+                self.__setTrackbarPosThresh()
             
             cv2.setMouseCallback(self._frameName, self.__mouseCallback)
         else:
@@ -402,7 +385,7 @@ class RaspPiCamera(Camera):
         self._cap = PiCamera()
         self._cap.resolution = (640, 480)
         self._cap.framerate = 32
-        self.__rawCapture = PiRGBArray(self._cap, size=(640, 480))
+        self.__rawCapture = PiRGBArray(self._cap, size=self._cap.resolution)
         
         #self._cap.start_preview()
         # allow the camera to warmup
@@ -566,7 +549,7 @@ class CameraWrapper(object):
 ###############################################################################
 
 
-def yuvToRgb(red, green, blue):
+def rgbToHsb(red, green, blue):
     green = np.uint8([[[ blue, green, red ]]])
     return cv2.cvtColor(green,cv2.COLOR_BGR2HSV)
 
