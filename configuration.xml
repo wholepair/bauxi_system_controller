@@ -1,6 +1,6 @@
 <configuration>
     <!-- Mission file, contains Lat/Lon: -->
-    <mission>mission.gpx</mission>
+    <mission>friendly.gpx</mission>
     <!-- Port Configurations -->
     <port>
         <name>/dev/serial/by-id/usb-FTDI_TTL232R-3V3_FTH7JURZ-if00-port0</name>
@@ -20,17 +20,17 @@
     <!-- Cammera configuration section -->
     <camera>
         <!-- Cammera device name: -->
-        <name>/dev/video0</name>
+        <name>PiCamera</name>
         <!-- Alternate names are: /dev/video0, video1, etc.. -->
         <color>
-            <!-- Use the HSV coror model to describe the target's color: -->
-            <hue>7</hue>
-            <saturation>207</saturation>
-            <value>113</value>
+            <!-- Use the HSB coror model to describe the target's color: -->
+            <hue>175</hue>
+            <saturation>200</saturation>
+            <brightness>193</brightness>
             <!-- Threshold values for hue saturation and value: -->
-            <thresh_h>5</thresh_h>
-            <thresh_s>20</thresh_s>
-            <thresh_v>50</thresh_v>
+            <thresh_h>20</thresh_h>
+            <thresh_s>40</thresh_s>
+            <thresh_b>60</thresh_b>
         </color>
         <!-- Ultimately we want to store a set of SIFT/FAST keypoints to
          to describe the target's geometry: -->

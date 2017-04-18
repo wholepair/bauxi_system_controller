@@ -66,14 +66,14 @@ class Configuration(object):
                             self.__hue = int(prop.text)
                         elif prop.tag == 'saturation':
                             self.__saturation = int(prop.text)
-                        elif prop.tag == 'value':
-                            self.__value = int(prop.text)
+                        elif prop.tag == 'brightness':
+                            self.__brightness = int(prop.text)
                         elif prop.tag == 'thresh_h':
                             self.__threshHue = int(prop.text)
                         elif prop.tag == 'thresh_s':
                             self.__threshSat = int(prop.text)
-                        elif prop.tag == 'thresh_v':
-                            self.__threshVal = int(prop.text)
+                        elif prop.tag == 'thresh_b':
+                            self.__threshBrt = int(prop.text)
             return
         
         @property
@@ -82,8 +82,8 @@ class Configuration(object):
     
         @property
         def filterProperties(self):
-            return (self.__hue, self.__saturation, self.__value
-                  , self.__threshHue, self.__threshSat, self.__threshVal)
+            return (self.__hue, self.__saturation, self.__brightness
+                  , self.__threshHue, self.__threshSat, self.__threshBrt)
             
         
     
