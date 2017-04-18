@@ -192,16 +192,28 @@ class MissionPlanner(object):
     logPrint('Setting current mode to: MODE_UNKNOWN.')
     
     # Spacial controllers modes of operation, see 
-    SPACIAL_MODE_AUTO_AVOID = 0     # Use sensors to automatically avoid objects.
-    SPACIAL_MODE_EXT_CONTROL = 1    # Rely on external software control commands.
-    SPACIAL_MODE_REMOTE_CONTROL = 2 # Rely on remote (radio) control for movement.
+    SPACIAL_MODE_REMOTE_CONTROL  = 0 # Rely on remote (radio) control for movement.
+    SPACIAL_MODE_SYS_CONTROL     = 1 # Rely on external software control commands.
+    SPACIAL_MODE_AUTO_AVOID      = 2 # Use sensors to automatically avoid objects.
+    SPACIAL_MODE_MANUAL_OVERRIDE = 3 # Manual override radio dead-man control.
     
-    SPACIAL_MODE_NAMES = { SPACIAL_MODE_AUTO_AVOID     : 'SPACIAL_MODE_AUTO_AVOID'
-                         , SPACIAL_MODE_EXT_CONTROL    : 'SPACIAL_MODE_EXT_CONTROL'
-                         , SPACIAL_MODE_REMOTE_CONTROL : 'SPACIAL_MODE_REMOTE_CONTROL'
+    SPACIAL_MODE_NAMES = { SPACIAL_MODE_REMOTE_CONTROL  : 'SPACIAL_MODE_REMOTE_CONTROL'
+                         , SPACIAL_MODE_SYS_CONTROL     : 'SPACIAL_MODE_SYS_CONTROL'
+                         , SPACIAL_MODE_AUTO_AVOID      : 'SPACIAL_MODE_AUTO_AVOID'
+                         , SPACIAL_MODE_MANUAL_OVERRIDE : 'SPACIAL_MODE_MANUAL_OVERRIDE'
                          }
     
-    __currentSpacialMode = SPACIAL_MODE_EXT_CONTROL
+    __currentSpacialMode = SPACIAL_MODE_SYS_CONTROL
+    
+    # Modes of the radio, hand controller. aka dead-man switch
+    RADIO_MODE_MOTION_DISABLED  = 0
+    RADIO_MODE_MOTION_ENABLED_AUTO = 1
+    RADIO_MODE_MOTION_ENABLED_REMOTE = 2
+    
+    RADIO_MODE_NAMES = { RADIO_MODE_MOTION_DISABLED       : 'RADIO_MODE_MOTION_DISABLED'
+                       , RADIO_MODE_MOTION_ENABLED_AUTO   : 'RADIO_MODE_MOTION_ENABLED_AUTO'
+                       , RADIO_MODE_MOTION_ENABLED_REMOTE : 'RADIO_MODE_MOTION_ENABLED_REMOTE'
+                         }
     
     THRESHOLD_TARGET_DISTANCE = 15 # Meters to target before we look for it...
     THRESHOLD_LOCATION_DISTANCE = 10 # Meters to location before we go to the next one.
@@ -242,9 +254,9 @@ class MissionPlanner(object):
     SEARCH_PATTERN_3 = 2
     
     SEARCH_PATTERN_NAMES = { SEARCH_PATTERN_NA : "SEARCH_PATTERN_NA"
-                           , SEARCH_PATTERN_1 : 'SEARCH_PATTERN_1'
-                           , SEARCH_PATTERN_2 : 'SEARCH_PATTERN_2'
-                           , SEARCH_PATTERN_3 : 'SEARCH_PATTERN_3'
+                           , SEARCH_PATTERN_1  : 'SEARCH_PATTERN_1'
+                           , SEARCH_PATTERN_2  : 'SEARCH_PATTERN_2'
+                           , SEARCH_PATTERN_3  : 'SEARCH_PATTERN_3'
                            }
     
     __currentSearchPattern = SEARCH_PATTERN_NA
@@ -331,9 +343,17 @@ class MissionPlanner(object):
         self.__locationName = loc.rteName # Route name.
         
         self.__locationIndex = 1
-        logPrint('Current Goal Location: ' + repr(self.__locations[0]))
-        
+        logPrint('Current Location: ' + repr(self.__locations[0]))
+        self.__setVectorPositionToIndex()
         self.__autoAvoidTimer = TimeoutTimer()
+        return
+    
+    
+    def __setVectorPositionToIndex(self):
+        """Set the UTM spacial coordinate to the n'th location in the"""
+        self.__vectorPositionX = self.__locations[self.__locationIndex-1][0][0]
+        self.__vectorPositionY = self.__locations[self.__locationIndex-1][0][1]
+        self.__distanceFromLastTarget = 0
         return
     
     
@@ -341,9 +361,19 @@ class MissionPlanner(object):
         """Check to see if we need to change modes from app control to 
         microcontroller controll."""
         # TODO: set constant thresholds here.
-        return self.__messageSpacial.sonarFront < 40 \
+        # TODO: incorporate IR sensor distance here too.
+        autoAvoidNeeded = False
+        
+        if self.__messageSpacial.sonarFront < 40 \
             or self.__messageSpacial.sonarLeft < 20 \
-            or self.__messageSpacial.sonarRight < 20
+            or self.__messageSpacial.sonarRight < 20:
+            
+            print 'Sonar Left:', self.__messageSpacial.sonarLeft
+            print 'Sonar Front:', self.__messageSpacial.sonarFront
+            print 'Sonar Right:', self.__messageSpacial.sonarRight
+            autoAvoidNeeded = True
+            
+        return autoAvoidNeeded
     
     
     def __selfTest(self):
@@ -381,17 +411,31 @@ class MissionPlanner(object):
         """As we would expect, we'll spend most of our time here. 
         Control actuators, etc..
         """
+        
+        if self.currentMode == self.MODE_HALT:
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            print "CALLED NORMAL OPERATION WHILE HALTED"
+            return
+        
+        # If we are at the last location, then halt.
+        if self.__locationIndex >= len(self.__locations):
+            # Halt the robot
+            logPrint('Exhausted locations to traverse, stopping.')
+            self.setRunMode(self.MODE_HALT)
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            self.__motorSpeed = self.SPEED_STOP
+            self.shutdown()
+            return
+        
         # The following three functions must be called in order:
         self.__computeSpacialPosition()
         self.__computeLocationDistance()
         self.__computeTurnDirection()
         self.__motorSpeed = self.SPEED_MAX
-        #print 'Turn angle:', self.__turnAngle, ', Turn direction:', self.__turnDirection 
-        turn = self.__turnAngle * self.TURN_RATIO
+        
         # If we are within a threshold distance from an intermediate location
         # then increment to the next location.
-        goalLocation = self.__locations[self.__locationIndex]
-        currentLocationType = goalLocation[1][0]
+        currentLocationType = self.__locations[self.__locationIndex][1]
         
         if currentLocationType == self.LOCATION_TYPE_WAYPOINT \
             and self.__distanceToLocation <= self.THRESHOLD_LOCATION_DISTANCE: 
@@ -403,8 +447,6 @@ class MissionPlanner(object):
             if self.__targetVisible:
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
-                #print 'Turn angle:', self.__turnAngle, ', Turn direction:', self.__turnDirection 
-                turn = self.__turnAngle * self.TURN_RATIO_VISION
                 if self.__distanceToTarget > 0 and self.__distanceToTarget < 30:
                     #logger.info('Approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
@@ -415,8 +457,7 @@ class MissionPlanner(object):
                     self.__locationIndex += 1
                     # Reset our vector location to the next one in the list. 
                     # We know exactly where we are because we contacted the target.
-                    self.__utmVector = ()
-                    self.__distanceFromLastTarget = 0
+                    self.__setVectorPositionToIndex()
                     self.setRunMode(self.MODE_WAYPOINT_SEARCH)
                     self.__currentSearchPattern = self.SEARCH_PATTERN_NA
                 
@@ -429,37 +470,28 @@ class MissionPlanner(object):
             
             self.setRunMode(self.MODE_AUTO_AVOID)
             self.__autoAvoidTimer.resetTimeout(10.0) # 10 seconds.
-        elif self.__autoAvoidTimer.checkTimeout() < 0:
+        elif self.__autoAvoidTimer.checkTimeout() < 0 \
+            and self.currentMode == self.MODE_AUTO_AVOID:
             # Revert to mission planner control after a timeout.
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         
-        #print 'Turn angle:', self.__turnAngle, ', Turn direction:', self.__turnDirection 
-        if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0 \
-            and self.currentMode != self.MODE_HALT:
-            
+        if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0:
             speedLeft = 0
             speedRight = 0
             if self.__turnDirection == self.TURN_LEFT:
-                speedLeft = int(self.__motorSpeed - turn)
+                speedLeft = int(self.__motorSpeed - self.__turnAngle)
                 speedRight = int(self.__motorSpeed)
                 
             elif self.__turnDirection == self.TURN_RIGHT:
                 speedLeft = int(self.__motorSpeed)
-                speedRight = int(self.__motorSpeed - turn)
+                speedRight = int(self.__motorSpeed - self.__turnAngle)
             else:
                 speedLeft = int(self.__motorSpeed)
                 speedRight = int(self.__motorSpeed)
                 
             # Set the speed of the right and left motor's
             self.setMotorSpeed(speedLeft, speedRight)
-        # If we are at the last location, then halt.
-        if self.__locationIndex >= len(self.__locations):
-            # Halt the robot
-            logPrint('Exhausted locations to traverse, stopping.')
-            self.setRunMode(self.MODE_HALT)
-            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
-            self.__motorSpeed = self.SPEED_STOP
-            self.shutdown()
+        
         return
     
     
@@ -572,15 +604,7 @@ class MissionPlanner(object):
     
     
     def setRunMode(self, mode):
-        """mode: run modes are:
-        MODE_UNKNOWN = -1
-        MODE_WAYPOINT_SEARCH = 0 # Use vector navigation and GPS, move to waypoint. 
-        MODE_TARGET_SEARCH = 1   # Looking for a target object (visual search)
-        MODE_TARGET_TRACKING = 2 # Target is visually acquired, track it.
-        MODE_CALIBRATION = 3     # Calibrate inertial measurement subsystem.
-        MODE_AUTO_AVOID = 4      # An obstacle is detected, allow subsystem to control
-        MODE_REMOTE_CONTROL = 5  # Control the robot with a remote control
-        MODE_HALT = 6            # Stop all motion
+        """Set system and spacial controller run modes.
         """
         if mode == self.__currentMode:
             return
@@ -592,15 +616,12 @@ class MissionPlanner(object):
         elif mode == self.MODE_REMOTE_CONTROL:
             self.__setRunModeSpacial(self.SPACIAL_MODE_REMOTE_CONTROL)
         else:
-            self.__setRunModeSpacial(self.SPACIAL_MODE_EXT_CONTROL)
+            self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         return
     
     
     def __setRunModeSpacial(self, mode):
-        """mode: spacial run modes are:
-        SPACIAL_MODE_AUTO_AVOID = 0
-        SPACIAL_MODE_EXT_CONTROL = 1
-        SPACIAL_MODE_REMOTE_CONTROL = 2
+        """Set spacial run mode, send message to spacial controller.
         """
         if self.__currentSpacialMode != mode:
             logPrint('Setting spacial controller mode: ' + self.SPACIAL_MODE_NAMES[mode])
@@ -630,48 +651,41 @@ class MissionPlanner(object):
     
     
     def __computeSpacialPosition(self):
-        # Sum the next vector from the spacial system.
-        if len(self.__utmVector) == 0:
-            # Set the UTM spacial coordinate to the n'th location in the
-            # mission file. Kind of a base case.
-            self.__vectorPositionX = self.__locations[self.__locationIndex][0][0]
-            self.__vectorPositionY = self.__locations[self.__locationIndex][0][1]
-            self.__utmVector = (self.__vectorPositionX, self.__vectorPositionY)
-        else:
-            # Compute the delta counts and average the two, combine this with 
-            # the compass direction to produce a vector.
-            deltaL = self.__encoderCountsLeft - self.__prevEncoderCountsLeft
-            deltaR = self.__encoderCountsRight - self.__prevEncoderCountsRight
-            deltaCounts = (deltaL + deltaR) / 2.0 # Only works for skid steering.
-            
-            # Average the the headings in the heading list. Then clear it.
-            # If the heading list is empty, then simply use the previous heading.
-            headingSum = 0
-            for heading in self.__headingList:
-                headingSum += heading
-            if len(self.__headingList) > 0:
-                averageHeading = headingSum / float(len(self.__headingList))
-            # Average the current and previous heading if we only got a single
-            # heading value.
-            if len(self.__headingList) == 1 and self.__prevAverageHeading != -1.0:
-                averageHeading = (averageHeading + self.__prevAverageHeading) / 2.0
-            self.__averageHeading = averageHeading
-            # If we did not move, then we don't need to update this information.
-            if deltaCounts == 0:
-                return
-            # Convert the delta counts to meters.
-            deltaMeters = deltaCounts * self.__dataProcessor.encoderCountsPerMeter
-            self.__loopDisplacement = deltaMeters # How far we moved this iteration.
-            self.__distanceFromLastTarget += deltaMeters
-            print 'Delta Meters: ', deltaMeters, ', Average Heading', averageHeading
-            # Add the X and Y values to the UTM vector values.
-            self.__vectorPositionX += deltaMeters * math.cos(averageHeading)
-            self.__vectorPositionY += deltaMeters * math.sin(averageHeading)
-            
-            # Assign a new updated tuple value to the spacial UTM variable.
-            self.__utmVector = (self.__vectorPositionX, self.__vectorPositionY)
-            self.__headingList = []
-            self.__prevAverageHeading = self.__averageHeading
+        """Sum the next vector from the spacial system.
+        Compute the delta counts and average the two, combine this with 
+        the compass direction to produce a vector."""
+        deltaL = self.__encoderCountsLeft - self.__prevEncoderCountsLeft
+        deltaR = self.__encoderCountsRight - self.__prevEncoderCountsRight
+        deltaCounts = (deltaL + deltaR) / 2.0 # Only works for skid steering.
+        
+        # Average the the headings in the heading list. Then clear it.
+        # If the heading list is empty, then simply use the previous heading.
+        headingSum = 0
+        for heading in self.__headingList:
+            headingSum += heading
+        if len(self.__headingList) > 0:
+            averageHeading = headingSum / float(len(self.__headingList))
+        # Average the current and previous heading if we only got a single
+        # heading value.
+        if len(self.__headingList) == 1 and self.__prevAverageHeading != -1.0:
+            averageHeading = (averageHeading + self.__prevAverageHeading) / 2.0
+        self.__averageHeading = averageHeading
+        # If we did not move, then we don't need to update this information.
+        if deltaCounts == 0:
+            return
+        # Convert the delta counts to meters.
+        deltaMeters = deltaCounts * self.__dataProcessor.encoderCountsPerMeter
+        self.__loopDisplacement = deltaMeters # How far we moved this iteration.
+        self.__distanceFromLastTarget += deltaMeters
+        print 'Delta Meters: ', deltaMeters, ', Average Heading', averageHeading
+        # Add the X and Y values to the UTM vector values.
+        self.__vectorPositionX += deltaMeters * math.cos(averageHeading)
+        self.__vectorPositionY += deltaMeters * math.sin(averageHeading)
+        
+        # Assign a new updated tuple value to the spacial UTM variable.
+        self.__utmVector = (self.__vectorPositionX, self.__vectorPositionY)
+        self.__headingList = []
+        self.__prevAverageHeading = self.__averageHeading
         return
     
     
@@ -681,12 +695,12 @@ class MissionPlanner(object):
     
     
     def __computeCompositePosition(self, gX, gY, vX, vY, gpsValid):
-        # Combine the positions.
-        # For now, simply average the GPS and spacial positions. Weight the
-        # GPS position by the number of satelites used (above some minimum)
-        # and weight the spacial position by the inverse of the distance
-        # travelled (since the accuracy of the vector position goes down as
-        # distance from a last known location increases.
+        """Combine the position estimations:
+        For now, simply average the GPS and spacial positions. Weight the
+        GPS position by the number of satelites used (above some minimum)
+        and weight the spacial position by the inverse of the distance
+        travelled (since the accuracy of the vector position goes down as
+        distance from a last known location increases."""
         gpsWeight = 0.0
         if gpsValid:
             # Weigh the GPS position based on the number of satelites in view.
@@ -702,8 +716,8 @@ class MissionPlanner(object):
     
     
     def __computeLocationDistance(self):
-        # Calculate the distance between where we are and where we want to go.
-        # For now this is all based off of GPS.
+        """Calculate the distance between where we are and where we want to go.
+        """
         gpsValid = False
         gX = 0.0
         gY = 0.0
@@ -731,15 +745,14 @@ class MissionPlanner(object):
         """Given our current location and heading, compute the direction we 
         must turn to go towards the next location.
         """
-
-        
         goalX = self.__locations[self.__locationIndex][0][0]
         goalY = self.__locations[self.__locationIndex][0][1]
         
         heading = self.__headingDegrees
+        # Angle between east and where we are and where we want to be.
         angle = math.atan2(goalY - self.__compositeY, goalX - self.__compositeX)
 
-        angle *= 180.0 / math.pi;
+        angle *= 180.0 / math.pi # Convert radians to degrees.
         
         if angle < 0.0:
             angle += 360.0
@@ -751,7 +764,8 @@ class MissionPlanner(object):
         if turnAngle > 180.0:
             turnAngle = 360.0 - abs(heading - angle)
         
-        self.__turnAngle = turnAngle
+        self.__turnAngle = turnAngle * self.TURN_RATIO
+        self.__crosstrackError = turnAngle
         
         if angle - heading < 0 and abs(angle - heading) >= 180:
             self.__turnDirection = self.TURN_LEFT
@@ -767,8 +781,8 @@ class MissionPlanner(object):
     
     
     def __searchForTarget(self):
-        # Here we execute target search patterns, but for now, do nothing.
-        # The targetVisible flag is already set in the updateVision function.
+        """Here we execute target search patterns, but for now, do nothing.
+        The targetVisible flag is already set in the updateVision function."""
         self.__turnAngle = 10
         DISTANCE_LIMIT_DIVISION = self.TARGET_SEARCH_DISTANCE_LIMIT / 3.0
         self.__targetSearchDistance += self.__loopDisplacement
@@ -791,10 +805,10 @@ class MissionPlanner(object):
     
     
     def __moveTowardTarget(self):
-        # Here we determine which direction to turn to drive toward the cone.
-        # If we are close enough, go really slow, we also decide if have 
-        # made contact with the target here, basically, when there is a 
-        # minimum distance to the target.
+        """Here we determine which direction to turn to drive toward the cone.
+        If we are close enough, go really slow, we also decide if have 
+        made contact with the target here, basically, when there is a 
+        minimum distance to the target."""
         distanceToTarget = self.__messageSpacial.sonarFront
         # basically, we center the target in the image.
         imageMiddleX = 640 / 2.0
@@ -805,11 +819,11 @@ class MissionPlanner(object):
         else:
             self.__turnDirection = self.TURN_STRAIGHT
             
-        pixelError = (1.0 / distanceToTarget) * 100.0
+        pixelError = 6000.0 / distanceToTarget
         self.__turnAngle = abs(self.__targetX - imageMiddleX)
-        if self.__turnAngle < pixelError: # TODO, scale this by the distance
-            # when we are farther away the error will need to be less. But 
-            # when we are close, the target occupies more of the FOV. 
+        self.__turnAngle *= self.TURN_RATIO_VISION
+        
+        if self.__turnAngle < pixelError:
             self.__distanceToTarget = distanceToTarget
         else:
             # Target is not being ranged. Set to -1 invalid.
@@ -882,7 +896,8 @@ class MissionPlanner(object):
             print '---------------'
             print 'Motor Status Left:  ', self.__messageSpacial.motorStatusLeft
             print 'Motor Status Right: ', self.__messageSpacial.motorStatusRight
-            print 'Run Mode  ', self.__messageSpacial.runMode
+            print 'Radio Mode:', self.RADIO_MODE_NAMES[self.__messageSpacial.radioMode]
+            print 'Radio Enabled: ', self.__messageSpacial.radioEnabled
         
         print '[ Camera Tracking Data: ]'
         print '*************************'
@@ -891,11 +906,14 @@ class MissionPlanner(object):
         print 'Target Y: ', self.__targetY
         print 'Distance to Target: ', self.__distanceToTarget
         
-        print '[ GPS Position Data: ]'
-        print '**********************'
-        print 'Latitude:  ', self.__lat
-        print 'Longitude: ', self.__lon
-        print 'UTM:  ', repr(self.__utmGps)
+        if self.messageGps is not None and self.messageGps.fields is not None:
+            print '[ GPS Position Data: ]'
+            print '**********************'
+            print 'Latitude:  ', self.__lat
+            print 'Longitude: ', self.__lon
+            print 'UTM:  ', repr(self.__utmGps)
+            print 'Satelite Fix:  ', self.messageGps.fields.fix
+            print 'Satelite Count:', self.messageGps.fields.sat
         
         print '[ Vector Position Data: ]'
         print '*************************'
@@ -905,6 +923,7 @@ class MissionPlanner(object):
         print '[ Composite Values: ]'
         print '*********************'
         print 'Turn Direction: ', self.TURN_DIRECTION_NAMES[self.__turnDirection]
+        print 'Crosstrack Error: ', self.__crosstrackError
         print 'Turn Magnitude: ', self.__turnAngle
         print 'Speed:  ', self.__motorSpeed
         print 'Distance to waypoint:', self.__distanceToLocation
@@ -998,12 +1017,6 @@ def showMap():
     mp.showMap(True)
     #t = Timer(1.0, show)
     #t.start() 
-    return
-
-
-def stat():
-    # TODO: print the status of the system.
-    pass
     return
 
 
