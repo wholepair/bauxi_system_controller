@@ -489,10 +489,11 @@ class SpacialMessage(Message):
         # Left motor status:
         self.__motorStatusLeft = int(data[11])
         self.__motorStatusRight = int(data[12])
-        self.__runMode = int(data[13])
+        self.__radioMode = int(data[13])
+        self.__radioEnabled = bool(int(data[14]))
         # Timestamps from the uController
-        self.__milliseconds = int(data[14])
-        self.__microseconds = int(data[15])
+        self.__milliseconds = int(data[15])
+        self.__microseconds = int(data[16])
         self._valid = True
         return
     
@@ -514,7 +515,8 @@ class SpacialMessage(Message):
             + c + str(self.__encoderCountsRight) \
             + c + str(self.__motorStatusLeft) \
             + c + str(self.__motorStatusRight) \
-            + c + str(self.__runMode) \
+            + c + str(self.__radioMode) \
+            + c + str(self.__radioEnabled) \
             + c + str(self.__milliseconds) \
             + c + str(self.__microseconds) \
             + c + str(self._creationTime) \
@@ -579,8 +581,12 @@ class SpacialMessage(Message):
         return self.__motorStatusRight
     
     @property
-    def runMode(self):
-        return self.__runMode
+    def radioMode(self):
+        return self.__radioMode
+    
+    @property
+    def radioEnabled(self):
+        return self.__radioEnabled
     
     @property
     def milliseconds(self):
