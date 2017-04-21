@@ -63,6 +63,7 @@ class TimeoutTimer(object):
         """Return the number of of seconds until timeout.
         If the duration has not been elapsed, return a positive number, 
         otherwise the return value is negative."""
+        #print self.__timeout - time.clock()
         return self.__timeout - time.clock()
     
     
@@ -191,19 +192,21 @@ class MissionPlanner(object):
     __currentMode = MODE_UNKNOWN
     logPrint('Setting current mode to: MODE_UNKNOWN.')
     
-    # Spacial controllers modes of operation, see 
+    # Spacial controllers modes of operation, see
+    SPACIAL_MODE_UNSET = -1
     SPACIAL_MODE_REMOTE_CONTROL  = 0 # Rely on remote (radio) control for movement.
     SPACIAL_MODE_SYS_CONTROL     = 1 # Rely on external software control commands.
     SPACIAL_MODE_AUTO_AVOID      = 2 # Use sensors to automatically avoid objects.
     SPACIAL_MODE_MANUAL_OVERRIDE = 3 # Manual override radio dead-man control.
     
-    SPACIAL_MODE_NAMES = { SPACIAL_MODE_REMOTE_CONTROL  : 'SPACIAL_MODE_REMOTE_CONTROL'
+    SPACIAL_MODE_NAMES = { SPACIAL_MODE_UNSET           : 'SPACIAL_MODE_UNSET'
+                         , SPACIAL_MODE_REMOTE_CONTROL  : 'SPACIAL_MODE_REMOTE_CONTROL'
                          , SPACIAL_MODE_SYS_CONTROL     : 'SPACIAL_MODE_SYS_CONTROL'
                          , SPACIAL_MODE_AUTO_AVOID      : 'SPACIAL_MODE_AUTO_AVOID'
                          , SPACIAL_MODE_MANUAL_OVERRIDE : 'SPACIAL_MODE_MANUAL_OVERRIDE'
                          }
     
-    __currentSpacialMode = SPACIAL_MODE_SYS_CONTROL
+    __currentSpacialMode = SPACIAL_MODE_UNSET
     
     # Modes of the radio, hand controller. aka dead-man switch
     RADIO_MODE_MOTION_DISABLED  = 0
@@ -227,16 +230,17 @@ class MissionPlanner(object):
                            , TURN_STRAIGHT : 'TURN_STRAIGHT'
                            }
     
-    TURN_RATIO = 10.0 / 180.0
+    # TODO: tune these ratios
+    TURN_RATIO = 20.0 / 180.0
     
     # TODO: get the horizontal resolution from the camera implementation.
-    TURN_RATIO_VISION = 10.0 / (640 / 2.0)  
+    TURN_RATIO_VISION = 20.0 / (640 / 2.0)  
     
-    SPEED_MAX = 220
-    SPEED_MED = 180
-    SPEED_MIN = 140
+    SPEED_MAX = 160
+    SPEED_MED = 140
+    SPEED_MIN = 130
     SPEED_STOP = 128
-    SPEED_UPDATE_INTERVAL = 10 # Frequency of speed feedback to motor controller.
+    SPEED_UPDATE_INTERVAL = 2 # Frequency of speed feedback to motor controller.
     
     LOCATION_TYPE_START = 'start'
     LOCATION_TYPE_WAYPOINT = 'waypoint'
@@ -261,6 +265,7 @@ class MissionPlanner(object):
     
     __currentSearchPattern = SEARCH_PATTERN_NA
     TARGET_SEARCH_DISTANCE_LIMIT = 30 # Meters.
+    TARGET_SCALE_THRESH = 100
     
     __staticMap = StaticMap()
     
@@ -279,9 +284,11 @@ class MissionPlanner(object):
         self.__distanceToLocation = sys.maxint
         self.__distanceFromLastTarget = 0
         # A boolean flag, True when the vision system has spotted the target.
-        self.__targetVisible = False
-        self.__targetX = 0
-        self.__targetY = 0
+        self.__targetShapeVisible = False
+        self.__targetShapeLocked = False
+        self.__targetShapeX = 0
+        self.__targetShapeY = 0
+        self.__targetScale = 0
         # The distance to the target, measured by the range sensor
         self.__distanceToTarget = sys.maxint
         self.__failedStateCounter = 0
@@ -360,13 +367,20 @@ class MissionPlanner(object):
     def __checkAutoAvoidRequired(self):
         """Check to see if we need to change modes from app control to 
         microcontroller controll."""
-        # TODO: set constant thresholds here.
-        # TODO: incorporate IR sensor distance here too.
         autoAvoidNeeded = False
         
+        leftBlocked = self.__messageSpacial.irLeft > 60 \
+            or self.__messageSpacial.irLeft < 30 \
+            or self.__messageSpacial.bumperLeft
+        
+        rightBlocked = self.__messageSpacial.irRight > 60 \
+            or self.__messageSpacial.irRight < 30 \
+            or self.__messageSpacial.bumperRight
+            
         if self.__messageSpacial.sonarFront < 40 \
             or self.__messageSpacial.sonarLeft < 20 \
-            or self.__messageSpacial.sonarRight < 20:
+            or self.__messageSpacial.sonarRight < 20 \
+            or leftBlocked or rightBlocked:
             
             print 'Sonar Left:', self.__messageSpacial.sonarLeft
             print 'Sonar Front:', self.__messageSpacial.sonarFront
@@ -374,6 +388,16 @@ class MissionPlanner(object):
             autoAvoidNeeded = True
             
         return autoAvoidNeeded
+    
+    
+    def __getCurrentLocationType(self):
+        """Get the current location type based on the location index. The 
+        locations list is a list of tuples: 
+            tuple: UTM location, length 2, meters easting, meters northing
+            string: location type
+            string: location handle
+        """
+        return self.__locations[self.__locationIndex][1]
     
     
     def __selfTest(self):
@@ -435,26 +459,37 @@ class MissionPlanner(object):
         
         # If we are within a threshold distance from an intermediate location
         # then increment to the next location.
-        currentLocationType = self.__locations[self.__locationIndex][1]
+        currentLocationType = self.__getCurrentLocationType()
         
         if currentLocationType == self.LOCATION_TYPE_WAYPOINT \
             and self.__distanceToLocation <= self.THRESHOLD_LOCATION_DISTANCE: 
             self.__locationIndex += 1
+            logPrint('Reached intermediate waypoint, index: ' \
+                     + str(self.__locationIndex))
+            
         elif currentLocationType == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
             
             self.__motorSpeed = self.SPEED_MED
-            if self.__targetVisible:
+            
+            if self.__targetShapeVisible or self.self.__targetShapeLocked:
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
                 if self.__distanceToTarget > 0 and self.__distanceToTarget < 30:
-                    #logger.info('Approaching target at slow speed.')
+                    # 30 CM as ranged by the center sonar rangefinder
+                    # TODO: use a constant instead of numeric literal 30.
+                    logger.info('Approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
                 
                 # Change this criteria given bumper switches.
                 if self.__messageSpacial.bumperLeft or self.__messageSpacial.bumperRight:
-                    logPrint('Contacted target, incrementing location index.')
+                    logPrint('Contacted target, incrementing location index: ' \
+                             + str(self.__locationIndex))
+                    
                     self.__locationIndex += 1
+                    # Set the target shape locked member to false after index increment..
+                    self.__targetShapeLocked = False
+                    
                     # Reset our vector location to the next one in the list. 
                     # We know exactly where we are because we contacted the target.
                     self.__setVectorPositionToIndex()
@@ -469,7 +504,7 @@ class MissionPlanner(object):
             and self.__checkAutoAvoidRequired():
             
             self.setRunMode(self.MODE_AUTO_AVOID)
-            self.__autoAvoidTimer.resetTimeout(10.0) # 10 seconds.
+            self.__autoAvoidTimer.resetTimeout(8.0) # 4.0 ~ 10.0 seconds
         elif self.__autoAvoidTimer.checkTimeout() < 0 \
             and self.currentMode == self.MODE_AUTO_AVOID:
             # Revert to mission planner control after a timeout.
@@ -490,6 +525,10 @@ class MissionPlanner(object):
                 speedRight = int(self.__motorSpeed)
                 
             # Set the speed of the right and left motor's
+            if speedLeft < self.SPEED_STOP:
+                speedLeft = self.SPEED_STOP
+            if speedRight < self.SPEED_STOP:
+                speedRight = self.SPEED_STOP
             self.setMotorSpeed(speedLeft, speedRight)
         
         return
@@ -529,7 +568,7 @@ class MissionPlanner(object):
         self.__headingList.append(yawRadians)
         
         #print yawDegrees
-        if len(self.__headingList) > 10:
+        if len(self.__headingList) > 5:
             self.__headingList.remove(self.__headingList[0])
         return
     
@@ -552,10 +591,16 @@ class MissionPlanner(object):
         """ Update the vision information. Can see target...
         """
         self.__messageVision = message
-        self.__targetVisible = message.targetShapeVisible
-        self.__targetX = message.targetShapeX
-        self.__targetY = message.targetShapeY
-        
+        self.__targetShapeVisible = message.targetShapeVisible
+        self.__targetShapeX = message.targetShapeX
+        self.__targetShapeY = message.targetShapeY
+        self.__targetScale = message.targetScale
+        if  self.__targetShapeVisible \
+            and self.__targetScale > self.TARGET_SCALE_THRESH \
+            and self.__getCurrentLocationType() == self.LOCATION_TYPE_TARGET \
+            and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
+            # Lock in the fact that we are seeing the cone.
+            self.__targetShapeLocked = True
         return
     
     
@@ -563,6 +608,8 @@ class MissionPlanner(object):
         """ Unload the mission planner,
         """
         self.__currentState = self.STATE_SHUTDOWN
+        self.setRunMode(self.MODE_HALT)
+        time.sleep(1.0)
         self.__dataProcessor.shutdown()
         return
     
@@ -585,17 +632,6 @@ class MissionPlanner(object):
         return
     
     
-    def printMag(self, axis=1):
-        if self.__messageInertial is not None:
-            if axis == 0:
-                print self.__messageInertial.magX
-            elif axis == 1:
-                print self.__messageInertial.magY
-            elif axis == 2:
-                print self.__messageInertial.magZ
-        return
-    
-    
     def setMotorSpeed(self, speedLeft, speedRight):
         """speed: signed integer, -10 to 10 are practical values."""
         self.__dataProcessor.sendMessage('s:l:' + str(speedLeft) + ';')
@@ -615,6 +651,9 @@ class MissionPlanner(object):
             self.__setRunModeSpacial(self.SPACIAL_MODE_AUTO_AVOID)
         elif mode == self.MODE_REMOTE_CONTROL:
             self.__setRunModeSpacial(self.SPACIAL_MODE_REMOTE_CONTROL)
+        elif mode == self.MODE_HALT:
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         else:
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         return
@@ -677,7 +716,7 @@ class MissionPlanner(object):
         deltaMeters = deltaCounts * self.__dataProcessor.encoderCountsPerMeter
         self.__loopDisplacement = deltaMeters # How far we moved this iteration.
         self.__distanceFromLastTarget += deltaMeters
-        print 'Delta Meters: ', deltaMeters, ', Average Heading', averageHeading
+        #print 'Delta Meters: ', deltaMeters, ', Average Heading', averageHeading
         # Add the X and Y values to the UTM vector values.
         self.__vectorPositionX += deltaMeters * math.cos(averageHeading)
         self.__vectorPositionY += deltaMeters * math.sin(averageHeading)
@@ -782,7 +821,7 @@ class MissionPlanner(object):
     
     def __searchForTarget(self):
         """Here we execute target search patterns, but for now, do nothing.
-        The targetVisible flag is already set in the updateVision function."""
+        The targetShapeVisible flag is already set in the updateVision function."""
         self.__turnAngle = 10
         DISTANCE_LIMIT_DIVISION = self.TARGET_SEARCH_DISTANCE_LIMIT / 3.0
         self.__targetSearchDistance += self.__loopDisplacement
@@ -800,6 +839,7 @@ class MissionPlanner(object):
             self.__currentSearchPattern = self.SEARCH_PATTERN_NA
             logPrint('Giving up on target, incrementing location index.')
             self.__locationIndex += 1
+            self.self.__targetShapeLocked = False
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         return
     
@@ -812,15 +852,15 @@ class MissionPlanner(object):
         distanceToTarget = self.__messageSpacial.sonarFront
         # basically, we center the target in the image.
         imageMiddleX = 640 / 2.0
-        if self.__targetX < imageMiddleX:
+        if self.__targetShapeX < imageMiddleX:
             self.__turnDirection = self.TURN_LEFT
-        elif self.__targetX > imageMiddleX:
+        elif self.__targetShapeX > imageMiddleX:
             self.__turnDirection = self.TURN_RIGHT
         else:
             self.__turnDirection = self.TURN_STRAIGHT
             
         pixelError = 6000.0 / distanceToTarget
-        self.__turnAngle = abs(self.__targetX - imageMiddleX)
+        self.__turnAngle = abs(self.__targetShapeX - imageMiddleX)
         self.__turnAngle *= self.TURN_RATIO_VISION
         
         if self.__turnAngle < pixelError:
@@ -864,9 +904,9 @@ class MissionPlanner(object):
             print '<Inertial System Status:>'
             print '-------------------------'
             print 'In Motion:      ', self.__messageInertial.inMotion
-            print 'System Cal:     ', self.__messageInertial.calSystem
+            #print 'System Cal:     ', self.__messageInertial.calSystem
             print 'Gyro Cal:       ', self.__messageInertial.calGyro
-            print 'Accel Cal:      ', self.__messageInertial.calAccel
+            #print 'Accel Cal:      ', self.__messageInertial.calAccel
             print 'Compass Cal:    ', self.__messageInertial.calMag
             print 'Temperature C:  ', self.__messageInertial.temperature
         
@@ -892,18 +932,20 @@ class MissionPlanner(object):
             print '-----------------'
             print 'Encoder Counts Left:  ', self.__messageSpacial.encoderCountsLeft
             print 'Encoder Counts Right: ', self.__messageSpacial.encoderCountsRight
-            print '<Motor Status:>'
-            print '---------------'
             print 'Motor Status Left:  ', self.__messageSpacial.motorStatusLeft
             print 'Motor Status Right: ', self.__messageSpacial.motorStatusRight
+            print '<Radio Status:>'
+            print '---------------'
             print 'Radio Mode:', self.RADIO_MODE_NAMES[self.__messageSpacial.radioMode]
             print 'Radio Enabled: ', self.__messageSpacial.radioEnabled
         
         print '[ Camera Tracking Data: ]'
         print '*************************'
-        print 'Target Visible: ', self.__targetVisible
-        print 'Target X: ', self.__targetX
-        print 'Target Y: ', self.__targetY
+        print 'Target Visible: ', self.__targetShapeVisible
+        print 'Target Shape Locked: ', self.__targetShapeLocked
+        print 'Target X: ', self.__targetShapeX
+        print 'Target Y: ', self.__targetShapeY
+        print 'Target Size: ', self.__targetScale
         print 'Distance to Target: ', self.__distanceToTarget
         
         if self.messageGps is not None and self.messageGps.fields is not None:
