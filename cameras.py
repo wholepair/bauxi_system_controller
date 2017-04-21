@@ -20,6 +20,7 @@ import time
 def getCvVersion():
     return cv2.__version__
 
+
 ###############################################################################
 # CAMERA: generic base class.
 ###############################################################################
@@ -373,7 +374,6 @@ class Camera(object):
 # RASPBERRY PI CAMERA:
 ###############################################################################
 
-  
 class RaspPiCamera(Camera):
     
     def __init__(self, device, filterProperties):
@@ -416,7 +416,6 @@ class RaspPiCamera(Camera):
         self._cap.close()
         return
     
-
 
 ###############################################################################
 # USB CAMERA (WEBCAM):
@@ -467,7 +466,6 @@ class WebCamera(Camera):
 ###############################################################################
 # CAMERA WRAPPER: give the camera a serial interface.
 ###############################################################################
-
 
 # TODO: implement wrapper class to turn the camera's into serial ports :)
 # implement readline, open close etc..
@@ -542,12 +540,10 @@ class CameraWrapper(object):
         print 'Camera Wrapper: closed camera.'
         return
     
-    
-    
+
 ###############################################################################
 # HELPER FUNCTIONS:
 ###############################################################################
-
 
 def rgbToHsb(red, green, blue):
     green = np.uint8([[[ blue, green, red ]]])
@@ -560,7 +556,5 @@ if __name__ == "__main__":
     cam.showImages(True)
     cam.readline()
     #cam.close()
-
-
 
 

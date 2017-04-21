@@ -326,7 +326,7 @@ class InertialDataProcessor(DataProcessor):
     """
     DRAW_INTERVAL = 100
     
-    __inertialVisualizer = InertialVisualizer()
+    #__inertialVisualizer = InertialVisualizer()
         
     def __init__(self, missionPlanner):
         DataProcessor.__init__(self, False)
@@ -359,7 +359,7 @@ class InertialDataProcessor(DataProcessor):
         self.__missionPlanner.updateInertial(message, yawRadians, yaw)
         logger.debug(message.toString())
         
-        self.__inertialVisualizer.updateHeading(yaw)
+        #self.__inertialVisualizer.updateHeading(yaw)
         
         return
     
