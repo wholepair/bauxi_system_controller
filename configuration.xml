@@ -15,18 +15,18 @@
         <rate>57600</rate>
     </port>
     <!-- Encoder configuration section. Counts per meter: -->
-    <encoder_counts_per_meter>1000</encoder_counts_per_meter>
+    <encoder_counts_per_meter>2687</encoder_counts_per_meter>
     
     <!-- Cammera configuration section -->
     <camera>
         <!-- Cammera device name: -->
-        <name>PiCamera</name>
+        <name>/dev/video0</name>
         <!-- Alternate names are: /dev/video0, video1, etc.. -->
         <color>
             <!-- Use the HSB coror model to describe the target's color: -->
-            <hue>175</hue>
-            <saturation>200</saturation>
-            <brightness>193</brightness>
+            <hue>20</hue>
+            <saturation>215</saturation>
+            <brightness>235</brightness>
             <!-- Threshold values for hue saturation and value: -->
             <thresh_h>20</thresh_h>
             <thresh_s>40</thresh_s>
@@ -39,6 +39,6 @@
     <!-- Compass configuration: -->
     <compass>
         <!-- The difference between magnetic north and true north: -->
-        <declination>10.5</declination>
+        <declination>-13.45</declination>
     </compass>
 </configuration>
