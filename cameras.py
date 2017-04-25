@@ -382,7 +382,6 @@ class RaspPiCamera(Camera):
         """
         Camera.__init__(self, device, filterProperties)
         # initialize the camera and grab a reference to the raw camera capture
-        
         self._cap = PiCamera()
         self._cap.resolution = (640, 480)
         self._cap.framerate = 32

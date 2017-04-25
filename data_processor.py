@@ -47,7 +47,7 @@ class Configuration(object):
         
     
     class Camera(object):
-        """
+        """XML Parameter parser for the camera sub-system.
         """
         
         def __init__(self, cameraNode):
@@ -88,7 +88,7 @@ class Configuration(object):
         
     
     class Compass(object):
-        """
+        """Get the magnetic declanation from the XML configuration file.
         """
         
         def __init__(self, compassNode):
@@ -104,7 +104,7 @@ class Configuration(object):
         @property
         def declination(self):
             return self.__declination
-            
+        
     
     def __init__(self):
         """Open the configuration XML file and initialize the configuration 
@@ -173,7 +173,7 @@ class Configuration(object):
 ###############################################################################
 
 class DataProcessor(object):
-    """
+    """Enque and dequeue messages for the system controller.
     """
     
     # Set to false to exit message processing threads.
@@ -254,7 +254,7 @@ class DataProcessor(object):
         # Check that the data processors have all started without issue.
         t.start()
         return
-        
+    
     
     def runDataProcessors(self):
         """ Poll the message loop for incoming IPC messages.
@@ -305,7 +305,7 @@ class DataProcessor(object):
         """
         self._txQueue.put(message)
         return
-     
+    
     
     def sendMessage(self, message):
         """ Put a message in a message queue to be read by a specific 
@@ -338,8 +338,8 @@ class InertialDataProcessor(DataProcessor):
         #self.__drawCounter = 0
         # Only call this for the last data processor instantiated. 
         return
-
-
+    
+    
     def processMessage(self, message):
         # Dispatch message to the relevant class's processor:
         
@@ -347,7 +347,7 @@ class InertialDataProcessor(DataProcessor):
         #sys.stdout.flush()
         
         self.__message = message
-        yaw = 360.0 - message.heading - self.__declination
+        yaw = 360.0 - message.heading + self.__declination
         if yaw >= 360.0:
             yaw = yaw - 360.0
         elif yaw < 0.0:
@@ -384,7 +384,7 @@ class SpatialDataProcessor(DataProcessor):
         self.__missionPlanner.updateSpacial(message)
         logger.debug(message.toString())
         # Check the outgoing message queue for spacial messages.
-        if self._txQueue.qsize() > 0:
+        while not self._txQueue.empty():
             # TODO: peek in the queue to see that it is for us...
             txMessage = self._txQueue.get()
             if txMessage[0] == self.ID_SPACIAL:
@@ -393,7 +393,7 @@ class SpatialDataProcessor(DataProcessor):
         return
     
     
-    
+
 class GpsDataProcessor(DataProcessor):
     
     def __init__(self, missionPlanner):
@@ -453,14 +453,13 @@ class CameraDataProcessor(DataProcessor):
         self.__missionPlanner.updateVision(message)
         logger.debug(message.toString())
         if self._txQueue.qsize() > 0:
-            # TODO: peek in the queue to see that it is for us...
             txMessage = self._txQueue.get()
             if txMessage[0] == self.ID_CAMERA:
-                print 'Camera Data Processor: transmit message:', txMessage
+                logger.debug('Camera Data Processor: transmit message:' + txMessage)
                 message.txCallback(txMessage[2:])
         return
-
-
+    
+    
 
 # Some helper functions to convert between DD MM.MM to DD.DD..
 # I.e. degrees minutes to degrees decimal degrees.
