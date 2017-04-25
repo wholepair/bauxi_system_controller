@@ -18,6 +18,8 @@ TODO: Implement calibration state machine and process.
 import sys, math, time
 from lxml import etree
 import utm
+import matplotlib.pyplot as plt
+
 import data_processor
 from data_processor import DataProcessor
 from static_maps import StaticMap
@@ -109,6 +111,7 @@ class MissionLocations(object):
                     elif field.tag == 'desc':
                         self.__metaDesc = field.text
             elif child.tag == 'rte':
+                logPrint('Mission File Locations:')
                 for field in child:
                     if type(field) == etree._Comment: continue
                     elif field.tag == 'name':
@@ -221,7 +224,7 @@ class MissionPlanner(object):
                          }
     
     THRESHOLD_TARGET_DISTANCE = 15 # Meters to target before we look for it...
-    THRESHOLD_WAYPOINT_DISTANCE = 10 # Meters to location before we go to the next one.
+    THRESHOLD_WAYPOINT_DISTANCE = 5 # Meters to location before we go to the next one.
     
     TURN_LEFT = 0
     TURN_RIGHT = 1
@@ -232,17 +235,21 @@ class MissionPlanner(object):
                            , TURN_STRAIGHT : 'TURN_STRAIGHT'
                            }
     
-    # TODO: tune these ratios
-    TURN_RATIO = 35.0 / 180.0
-    
-    # TODO: get the horizontal resolution from the camera implementation.
-    TURN_RATIO_VISION = 25.0 / (640 / 2.0)  
-    
+    SPEED_ULTRA = 200
     SPEED_MAX = 160
     SPEED_MED = 150
     SPEED_MIN = 140
     SPEED_STOP = 128
-    SPEED_UPDATE_INTERVAL = 2 # Frequency of speed feedback to motor controller.
+    
+    # TODO: tune these ratios
+    TURN_RATIO = float(2 * (SPEED_MED - SPEED_STOP)) / 180.0
+    
+    CAMERA_HORIZONTAL_RESOLUTION = 640
+    CAMERA_HORIZONTAL_CENTER = CAMERA_HORIZONTAL_RESOLUTION / 2.0
+    # TODO: get the horizontal resolution from the camera implementation.
+    TURN_RATIO_VISION = float(2 * (SPEED_MED - SPEED_STOP)) / CAMERA_HORIZONTAL_CENTER
+    
+    SPEED_UPDATE_INTERVAL = 1 # Frequency of speed feedback to motor controller.
     
     LOCATION_TYPE_START = 'start'
     LOCATION_TYPE_WAYPOINT = 'waypoint'
@@ -266,8 +273,9 @@ class MissionPlanner(object):
                            }
     
     __currentSearchPattern = SEARCH_PATTERN_NA
-    TARGET_SEARCH_DISTANCE_LIMIT = 30 # Meters.
-    TARGET_SCALE_THRESH = 300
+    TARGET_SEARCH_DISTANCE_LIMIT = 20.0 # Meters.
+    TARGET_SCALE_THRESH = 300.0
+    AUTO_AVOID_DEBOUNCE_COUNT = 12
     
     __staticMap = StaticMap()
     
@@ -282,6 +290,10 @@ class MissionPlanner(object):
         The waypoint location type is an intermediate location, used to 
         direct the robot away from hazards, etc..
         """
+        self.__shutdownRequested = False
+        self.__shutdownCountdown = 5
+        self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
+        
         # The distance to the next/current location in the location list.
         self.__distanceToLocation = sys.maxint
         self.__distanceFromLastTarget = 0
@@ -292,7 +304,7 @@ class MissionPlanner(object):
         self.__targetShapeY = 0
         self.__targetScale = 0
         # The distance to the target, measured by the range sensor
-        self.__distanceToTarget = sys.maxint
+        self.__distanceToTarget = -1.0
         self.__failedStateCounter = 0
         self.__spacialUpdateCounter = 0
         
@@ -356,20 +368,27 @@ class MissionPlanner(object):
         
         self.__locationIndex = 1
         logPrint('Current Location: ' + repr(self.__locations[0]))
-        self.__setVectorPositionToIndex()
+        self.__setVectorPositionToPrevLocation()
         self.__autoAvoidTimer = TimeoutTimer()
         
         # Show the mission coordinates in a matplotlib scatter plot
+        plt.ion()
         self.plotMissionCoordinates()
         return
     
     
     def plotMissionCoordinates(self):
-        import matplotlib.pyplot as plt
+        """Show the mission locations in a scatter plot and annotate them.
+        Also show the vector, GPS and composite positions.
+        """
+        # TODO: show the plot evenly scaled on X and Y including all points
+        # plus some margin for printing annotation without needing line wrap.
+        # TODO, add arrow for heading of robot.
+        plt.clf()
         for loc in self.__locations:
             x = loc[0][0]
             y = loc[0][1]
-            plt.text(x, y, ' Type: ' + loc[1] + ', note: ' + loc[2])
+            plt.text(x, y, ' Type: ' + loc[1] + ', ' + loc[2])
             if loc[1] == self.LOCATION_TYPE_TARGET:
                 plt.scatter([x,],[y,], color='r', marker='^')
             else:
@@ -379,24 +398,26 @@ class MissionPlanner(object):
             x = self.__utmGps[0]
             y = self.__utmGps[1]
             plt.scatter([x,],[y,], color='g', marker='s')
-            plt.text(x, y, ' GPS position', rotation=90)
+            plt.text(x, y, '  GPS', rotation=-45)
         
         if len(self.__utmVector) != 0:
             x = self.__utmVector[0]
             y = self.__utmVector[1]
             plt.scatter([x,],[y,], color='g', marker='v')
-            plt.text(x, y, ' Vector position', rotation=90)
+            plt.text(x, y, '  Vector', rotation=-45)
         
         if not self.__compositeX < 0:
             x = self.__compositeX
             y = self.__compositeY
             plt.scatter([x,],[y,], color='g', marker='*')
-            plt.text(x, y, ' Composite position', rotation=90)
+            plt.text(x, y, '  Composite', rotation=-45)
         
         plt.show()
+        plt.draw()
+        return
     
     
-    def __setVectorPositionToIndex(self):
+    def __setVectorPositionToPrevLocation(self):
         """Set the UTM spacial coordinate to the n'th location in the"""
         self.__vectorPositionX = self.__locations[self.__locationIndex-1][0][0]
         self.__vectorPositionY = self.__locations[self.__locationIndex-1][0][1]
@@ -405,35 +426,98 @@ class MissionPlanner(object):
         return
     
     
+    def __printRangefinderDistances(self):
+        message = 'Sonar Left: ' + str(self.__messageSpacial.sonarLeft) \
+            + ', Front: ' + str(self.__messageSpacial.sonarFront) \
+            + ', Right: ' + str(self.__messageSpacial.sonarRight)
+        
+        logPrint(message)
+        message = 'IR Left: ' + str(self.__messageSpacial.irLeft) \
+            + ', IR Right: ' + str(self.__messageSpacial.irRight)
+        
+        logPrint(message)
+        message = 'Bumper Left: ' + str(self.__messageSpacial.bumperLeft) \
+            + ', Right: ' + str(self.__messageSpacial.bumperRight)
+        
+        logPrint(message)
+        return
+    
+    
     def __checkAutoAvoidRequired(self):
         """Check to see if we need to change modes from app control to 
         microcontroller controll."""
         autoAvoidNeeded = False
         
-        leftBlocked = self.__messageSpacial.irLeft > 75 \
-            or self.__messageSpacial.irLeft < 45 \
-            or self.__messageSpacial.bumperLeft
-        
-        rightBlocked = self.__messageSpacial.irRight > 75 \
-            or self.__messageSpacial.irRight < 45 \
-            or self.__messageSpacial.bumperRight
+        leftBlocked = self.__messageSpacial.bumperLeft
+        rightBlocked = self.__messageSpacial.bumperRight
             
-        if self.__messageSpacial.sonarFront < 100 \
+        if self.__messageSpacial.sonarFront < 80 \
             or self.__messageSpacial.sonarLeft < 60 \
             or self.__messageSpacial.sonarRight < 60 \
             or leftBlocked or rightBlocked:
             
-            logPrint('Auto avoidance required')
-            logPrint('Sonar Left: ' + str(self.__messageSpacial.sonarLeft))
-            logPrint('Sonar Front: ' + str(self.__messageSpacial.sonarFront))
-            logPrint('Sonar Right: ' + str(self.__messageSpacial.sonarRight))
-            logPrint('IR Left: ' + str(self.__messageSpacial.irLeft))
-            logPrint('IR Right: ' + str(self.__messageSpacial.irRight))
-            logPrint('Bumper Left: ' + str(self.__messageSpacial.bumperLeft))
-            logPrint('Bumper Right: ' + str(self.__messageSpacial.bumperRight))
-            autoAvoidNeeded = True
-            
+            self.__autoAvoidCountdown -= 1
+            self.__printRangefinderDistances()
+            if self.__autoAvoidCountdown <= 0:
+                logPrint('Auto avoidance required:')
+                self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
+                autoAvoidNeeded = True
+            else:
+                # For a bit, simply stop and wait maybe the short distance is 
+                # just transient.
+                self.__motorSpeed = self.SPEED_STOP
+                self.__turnDirection = self.TURN_RIGHT
+        
         return autoAvoidNeeded
+    
+    
+    def __checkSlowDownRequired(self):
+        """Determine if we need to slow down due to detected objects"""
+        obstaclesDetected = False
+        
+        leftDanger = self.__messageSpacial.irLeft > 80 \
+            or self.__messageSpacial.irLeft < 30
+        
+        rightDanger = self.__messageSpacial.irRight > 80 \
+            or self.__messageSpacial.irRight < 30
+        
+        if self.__messageSpacial.sonarFront < 120 \
+            or self.__messageSpacial.sonarLeft < 80 \
+            or self.__messageSpacial.sonarRight < 80 \
+            or leftDanger or rightDanger:
+            
+            logPrint('Slow down required:')
+            self.__printRangefinderDistances()
+            obstaclesDetected = True
+        else:
+            self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
+        
+        return obstaclesDetected
+    
+    
+    def __noObstaclesDetected(self):
+        """Determine if we can drive more quickly due to no perceived obstacles"""
+        allClear = False
+        
+        leftClear = self.__messageSpacial.irLeft < 75 \
+            and self.__messageSpacial.irLeft > 45 \
+            and not self.__messageSpacial.bumperLeft
+        
+        rightClear = self.__messageSpacial.irRight > 75 \
+            and self.__messageSpacial.irRight < 45 \
+            and not self.__messageSpacial.bumperRight
+        
+        if self.__messageSpacial.sonarFront > 150 \
+            and self.__messageSpacial.sonarLeft > 100 \
+            and self.__messageSpacial.sonarRight > 100 \
+            and leftClear and rightClear:
+            
+            logPrint('No obstacles detected:')
+            self.__printRangefinderDistances()
+            self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
+            allClear = True
+        
+        return allClear
     
     
     def __getCurrentLocationType(self):
@@ -450,9 +534,9 @@ class MissionPlanner(object):
     
     
     def __selfTest(self):
-        """Perform a subsystem self-test."""
-        # Start a counter and if a limit is exceeded, then go into
-        # the failed state.
+        """Perform a subsystem self-test.
+        Start a counter and if a limit is exceeded, then go into
+        the failed state."""
         # Ensure that regardless of the initial encoder value, the delta is not
         # large (if in a rare case every subsystem was initialized for first 
         # spacial message).
@@ -467,7 +551,7 @@ class MissionPlanner(object):
             logPrint('Inertial System: ' + repr(self.__messageInertial))
             logPrint('GPS System: ' + repr(self.__messageGps))
             logPrint('Vision System: ' + repr(self.__messageVision))
-            stop()
+            self.shutdown()
         if self.__messageInertial is not None \
             and self.__messageVision is not None:
             
@@ -485,10 +569,21 @@ class MissionPlanner(object):
         return
     
     
+    def __checkShutdown(self):
+        if self.__shutdownRequested:
+            self.__shutdownCountdown -= 1
+            self.setRunMode(self.MODE_HALT)
+            if self.__shutdownCountdown <= 0:
+                self.__currentState = self.STATE_SHUTDOWN
+                self.__dataProcessor.shutdown()
+        return
+    
+    
     def __normalOperation(self):
         """As we would expect, we'll spend most of our time here. 
         Control actuators, etc..
         """
+        self.__checkShutdown()
         # The following three functions must be called in order:
         # __computeSpacialPosition()
         # __computeLocationDistance()
@@ -512,7 +607,16 @@ class MissionPlanner(object):
         
         self.__computeLocationDistance()
         self.__computeTurnDirection()
-        self.__motorSpeed = self.SPEED_MAX
+        
+        if self.__noObstaclesDetected():
+            self.__motorSpeed = self.SPEED_ULTRA
+        elif self.__checkSlowDownRequired() or self.__crosstrackError > 45.0:
+            # Slow dowm when cross track error is big.
+            self.__motorSpeed = self.SPEED_MIN
+        elif self.__crosstrackError > 25.0:
+            self.__motorSpeed = self.SPEED_MED
+        else:
+            self.__motorSpeed = self.SPEED_MAX
         
         # If we are within a threshold distance from an intermediate location
         # then increment to the next location.
@@ -527,12 +631,18 @@ class MissionPlanner(object):
         elif currentLocationType == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
             
-            self.__motorSpeed = self.SPEED_MED
-            
             if self.__targetShapeVisible or self.__targetShapeLocked:
+                
+                if self.currentMode != self.MODE_TARGET_TRACKING:
+                    # Stop for a bit. Take a picture.
+                    self.__motorSpeed = self.SPEED_STOP
+                    self.saveImages()
+                else:
+                    self.__motorSpeed = self.SPEED_MED
+                
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
-                if self.__distanceToTarget > 0 and self.__distanceToTarget < 30:
+                if self.__distanceToTarget > 0 and self.__distanceToTarget < 60:
                     # 30 CM as ranged by the center sonar rangefinder
                     # TODO: use a constant instead of numeric literal 30.
                     logger.info('Ranging target: approaching target at slow speed.')
@@ -543,6 +653,7 @@ class MissionPlanner(object):
                     logPrint('Contacted target, incrementing location index: ' \
                              + str(self.__locationIndex))
                     
+                    self.saveImages()
                     self.__locationIndex += 1
                     self.__targetSearchDistance = 0
                     # Set the target shape locked member to false after index increment..
@@ -550,7 +661,7 @@ class MissionPlanner(object):
                     
                     # Reset our vector location to the current one in the list. 
                     # We know exactly where we are because we contacted the target.
-                    self.__setVectorPositionToIndex()
+                    self.__setVectorPositionToPrevLocation()
                     self.setRunMode(self.MODE_WAYPOINT_SEARCH)
                     self.__currentSearchPattern = self.SEARCH_PATTERN_NA
                 
@@ -563,31 +674,33 @@ class MissionPlanner(object):
             and self.__checkAutoAvoidRequired():
             
             self.setRunMode(self.MODE_AUTO_AVOID)
-            self.__autoAvoidTimer.resetTimeout(4.0) # 4.0 ~ 10.0 seconds
+            self.__autoAvoidTimer.resetTimeout(2) # 4.0 ~ 10.0 seconds
         elif self.__autoAvoidTimer.checkTimeout() < 0 \
             and self.currentMode == self.MODE_AUTO_AVOID:
+            
             # Revert to mission planner control after a timeout.
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         
         if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0:
             speedLeft = 0
             speedRight = 0
+            
             if self.__turnDirection == self.TURN_LEFT:
                 speedLeft = int(self.__motorSpeed - self.__turnAngle)
                 speedRight = int(self.__motorSpeed)
-                
+            
             elif self.__turnDirection == self.TURN_RIGHT:
                 speedLeft = int(self.__motorSpeed)
                 speedRight = int(self.__motorSpeed - self.__turnAngle)
-            else:
+            elif self.__turnDirection == self.TURN_STRAIGHT \
+                or self.__motorSpeed == self.SPEED_STOP:
+                
                 speedLeft = int(self.__motorSpeed)
                 speedRight = int(self.__motorSpeed)
-                
+            
+            #print speedLeft, speedRight
+            
             # Set the speed of the right and left motor's
-            if speedLeft < self.SPEED_STOP:
-                speedLeft = self.SPEED_STOP
-            if speedRight < self.SPEED_STOP:
-                speedRight = self.SPEED_STOP
             self.setMotorSpeed(speedLeft, speedRight)
         
         return
@@ -647,7 +760,7 @@ class MissionPlanner(object):
     
     
     def updateVision(self, message):
-        """ Update the vision information. Can see target...
+        """Update the vision information. Can see target...
         """
         self.__messageVision = message
         self.__targetShapeVisible = message.targetShapeVisible
@@ -660,20 +773,26 @@ class MissionPlanner(object):
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
             # Lock in the fact that we are seeing the cone.
             self.__targetShapeLocked = True
-        if self.__targetShapeLocked:
+        
+        if self.__targetShapeLocked and not self.__targetShapeVisible:
             # If we are locked on the target, just use the center of mass of 
-            # the target color.
+            # the target color, unless the target shape is actually visible,
+            # then use the target shape location, since that is more accurate.
             self.__targetShapeX = message.targetColorX
             self.__targetShapeY = message.targetColorY
         return
     
     
     def shutdown(self):
-        """ Unload the mission planner,
+        """Unload the mission planner,
         """
-        self.__currentState = self.STATE_SHUTDOWN
-        self.setRunMode(self.MODE_HALT)
-        self.__dataProcessor.shutdown()
+        if self.__shutdownRequested:
+            # We called this twice, do it right now.
+            self.__currentState = self.STATE_SHUTDOWN
+            self.setRunMode(self.MODE_HALT)
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            self.__dataProcessor.shutdown()
+        self.__shutdownRequested = True
         return
     
     
@@ -696,7 +815,7 @@ class MissionPlanner(object):
     
     
     def setMotorSpeed(self, speedLeft, speedRight):
-        """speed: signed integer, -10 to 10 are practical values."""
+        """Speed: signed integer, 0 to 255."""
         self.__dataProcessor.sendMessage('s:l:' + str(speedLeft) + ';')
         self.__dataProcessor.sendMessage('s:r:' + str(speedRight) + ';')
         return
@@ -715,7 +834,6 @@ class MissionPlanner(object):
         elif mode == self.MODE_REMOTE_CONTROL:
             self.__setRunModeSpacial(self.SPACIAL_MODE_REMOTE_CONTROL)
         elif mode == self.MODE_HALT:
-            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         else:
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
@@ -763,6 +881,7 @@ class MissionPlanner(object):
         # Average the the headings in the heading list. Then clear it.
         # If the heading list is empty, then simply use the previous heading.
         headingSum = 0
+        averageHeading = self.__prevAverageHeading
         for heading in self.__headingList:
             headingSum += heading
         if len(self.__headingList) > 0:
@@ -833,8 +952,7 @@ class MissionPlanner(object):
         
         vX = self.__vectorPositionX
         vY = self.__vectorPositionY
-        # TODO: average these two positions per some weighting scheme.
-        
+
         currX, currY = self.__computeCompositePosition(gX, gY, vX, vY, gpsValid)
         
         goalX = self.__locations[self.__locationIndex][0][0]
@@ -870,12 +988,9 @@ class MissionPlanner(object):
             turnAngle = 360.0 - abs(heading - angle)
         
         self.__turnAngle = turnAngle * self.TURN_RATIO
-        
         self.__crosstrackError = turnAngle
-        
-        if turnAngle > 4.0 and turnAngle < 35.0:
-            # More aggressigely turn earlier to prevent error for accumulating.
-            self.__turnAngle = turnAngle * 2
+        if self.__crosstrackError < 2.0:
+            self.__turnAngle = 0
         
         if angle - heading < 0 and abs(angle - heading) >= 180:
             self.__turnDirection = self.TURN_LEFT
@@ -893,7 +1008,7 @@ class MissionPlanner(object):
     def __searchForTarget(self):
         """Here we execute target search patterns, but for now, do nothing.
         The targetShapeVisible flag is already set in the updateVision function."""
-        self.__turnAngle = 20
+        
         DISTANCE_LIMIT_DIVISION = self.TARGET_SEARCH_DISTANCE_LIMIT / 3.0
         self.__targetSearchDistance += self.__loopDisplacement
         if self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION:
@@ -903,9 +1018,11 @@ class MissionPlanner(object):
         elif self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION * 2:
             self.__currentSearchPattern = self.SEARCH_PATTERN_2
             self.__turnDirection = self.TURN_LEFT
+            self.__turnAngle = 20
         elif self.__targetSearchDistance < DISTANCE_LIMIT_DIVISION * 3:
             self.__currentSearchPattern = self.SEARCH_PATTERN_3
             self.__turnDirection = self.TURN_RIGHT
+            self.__turnAngle = 20
         else:
             self.__currentSearchPattern = self.SEARCH_PATTERN_NA
             logPrint('Giving up on target, incrementing location index.')
@@ -923,16 +1040,15 @@ class MissionPlanner(object):
         minimum distance to the target."""
         distanceToTarget = self.__messageSpacial.sonarFront
         # basically, we center the target in the image.
-        imageMiddleX = 640 / 2.0
-        if self.__targetShapeX < imageMiddleX:
+        if self.__targetShapeX < self.CAMERA_HORIZONTAL_CENTER:
             self.__turnDirection = self.TURN_LEFT
-        elif self.__targetShapeX > imageMiddleX:
+        elif self.__targetShapeX > self.CAMERA_HORIZONTAL_CENTER:
             self.__turnDirection = self.TURN_RIGHT
         else:
             self.__turnDirection = self.TURN_STRAIGHT
             
         pixelError = 6000.0 / distanceToTarget
-        self.__turnAngle = abs(self.__targetShapeX - imageMiddleX)
+        self.__turnAngle = abs(self.__targetShapeX - self.CAMERA_HORIZONTAL_CENTER)
         self.__turnAngle *= self.TURN_RATIO_VISION
         
         if self.__turnAngle < pixelError:
@@ -940,16 +1056,23 @@ class MissionPlanner(object):
         else:
             # Target is not being ranged. Set to -1 invalid.
             self.__distanceToTarget = -1
-            
-        logger.info('Moving toward cone, target x: ' + str(self.__targetShapeX))
-        logger.info('Target scale: ' + str(self.__targetScale))
-        logger.info('Target locked: ' + str(self.__targetShapeLocked))
+        
+        message = 'Moving toward target x: ' + str(self.__targetShapeX) \
+            + ', Scale: ' + str(self.__targetScale) \
+            + ', Locked: ' + str(self.__targetShapeLocked) \
+            + ', Distance: ' + str(self.__distanceToTarget) \
+            + ', Direction: ' + self.TURN_DIRECTION_NAMES[self.__turnDirection] \
+            + ', Angle: ' + str(self.__turnAngle)
+        
+        logPrint(message)
         return
     
     
     def showDebug(self):
         pass
+        # TODO: make a more advanced debug user interface.
         #foo = Ui_MainWindow()
+        self.plotMissionCoordinates()
         return
     
     
@@ -1135,7 +1258,8 @@ def stop():
     return
 
 
-def showMap():
+# Show Map:
+def sm():
     mp.showMap(True)
     #t = Timer(1.0, show)
     #t.start() 
@@ -1180,11 +1304,13 @@ def turn(speed, direction):
     setSpeed(speedLeft, speedRight)
     return
 
-def showCamera():
+# Show Camera
+def sc():
     mp.showCamera()
     return
 
-def showDebug():
+# Show Debug
+def sd():
     """Show the debug UI, not implemented"""
     mp.showDebug()
     return
@@ -1193,7 +1319,8 @@ def showDebug():
 printDebugInertial = True
 printDebugSpacial = True
 
-def printDebug(period=0):
+# Print Debug:
+def pd(period=0):
     # Period in seconds.
     while True:
         mp.printDebug()
