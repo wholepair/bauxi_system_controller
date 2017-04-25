@@ -4,8 +4,7 @@ Created on Sep 27, 2015
 @author: weston
 """
 
-import numpy as np
-import matplotlib.pyplot as plot
+import matplotlib.pyplot as plt
 
 from motionless import LatLonMarker, DecoratedMap
 import urllib
@@ -26,7 +25,7 @@ class StaticMap(object):
         # image.
         self.__zoom = 18 
         self.__mapType = 'hybrid'
-        plot.ion()
+        plt.ion()
         return
     
     
@@ -84,11 +83,11 @@ class StaticMap(object):
         img = cv2.imread(imageFileName, cv2.IMREAD_COLOR)
         
         if showMap:
-            plot.clf()
+            plt.clf()
             # cmap = 'gray', # TODO: figure out what color map to use.
-            plot.imshow(img, interpolation = 'bicubic')
-            plot.show()
-            plot.draw()
+            plt.imshow(img, interpolation = 'bicubic')
+            plt.show()
+            plt.draw()
         #cv2.destroyAllWindows()
         return img
         
