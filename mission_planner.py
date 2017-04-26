@@ -388,7 +388,7 @@ class MissionPlanner(object):
         for loc in self.__locations:
             x = loc[0][0]
             y = loc[0][1]
-            plt.text(x, y, ' Type: ' + loc[1] + ', ' + loc[2])
+            plt.text(x, y, ' ' + loc[2])
             if loc[1] == self.LOCATION_TYPE_TARGET:
                 plt.scatter([x,],[y,], color='r', marker='^')
             else:
@@ -398,19 +398,19 @@ class MissionPlanner(object):
             x = self.__utmGps[0]
             y = self.__utmGps[1]
             plt.scatter([x,],[y,], color='g', marker='s')
-            plt.text(x, y, '  GPS', rotation=-45)
+            plt.text(x, y, '   G', rotation=-45)
         
         if len(self.__utmVector) != 0:
             x = self.__utmVector[0]
             y = self.__utmVector[1]
             plt.scatter([x,],[y,], color='g', marker='v')
-            plt.text(x, y, '  Vector', rotation=-45)
+            plt.text(x, y, '   V', rotation=-45)
         
         if not self.__compositeX < 0:
             x = self.__compositeX
             y = self.__compositeY
             plt.scatter([x,],[y,], color='g', marker='*')
-            plt.text(x, y, '  Composite', rotation=-45)
+            plt.text(x, y, '   C', rotation=-45)
         
         plt.show()
         plt.draw()
@@ -427,17 +427,13 @@ class MissionPlanner(object):
     
     
     def __printRangefinderDistances(self):
-        message = 'Sonar Left: ' + str(self.__messageSpacial.sonarLeft) \
-            + ', Front: ' + str(self.__messageSpacial.sonarFront) \
-            + ', Right: ' + str(self.__messageSpacial.sonarRight)
-        
-        logPrint(message)
-        message = 'IR Left: ' + str(self.__messageSpacial.irLeft) \
-            + ', IR Right: ' + str(self.__messageSpacial.irRight)
-        
-        logPrint(message)
-        message = 'Bumper Left: ' + str(self.__messageSpacial.bumperLeft) \
-            + ', Right: ' + str(self.__messageSpacial.bumperRight)
+        message = 'Sonar L: ' + str(self.__messageSpacial.sonarLeft) \
+            + ', F: ' + str(self.__messageSpacial.sonarFront) \
+            + ', R: ' + str(self.__messageSpacial.sonarRight) \
+            + ', IR L: ' + str(self.__messageSpacial.irLeft) \
+            + ', IR R: ' + str(self.__messageSpacial.irRight) \
+            + ', Bumper L: ' + str(self.__messageSpacial.bumperLeft) \
+            + ', R: ' + str(self.__messageSpacial.bumperRight)
         
         logPrint(message)
         return
@@ -448,8 +444,11 @@ class MissionPlanner(object):
         microcontroller controll."""
         autoAvoidNeeded = False
         
-        leftBlocked = self.__messageSpacial.bumperLeft
-        rightBlocked = self.__messageSpacial.bumperRight
+        leftBlocked = self.__messageSpacial.irLeft > 87 \
+            or self.__messageSpacial.bumperLeft
+        
+        rightBlocked = self.__messageSpacial.irRight > 87 \
+            or self.__messageSpacial.bumperRight
             
         if self.__messageSpacial.sonarFront < 80 \
             or self.__messageSpacial.sonarLeft < 60 \
@@ -467,6 +466,8 @@ class MissionPlanner(object):
                 # just transient.
                 self.__motorSpeed = self.SPEED_STOP
                 self.__turnDirection = self.TURN_RIGHT
+        else:
+            self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
         
         return autoAvoidNeeded
     
@@ -481,7 +482,7 @@ class MissionPlanner(object):
         rightDanger = self.__messageSpacial.irRight > 80 \
             or self.__messageSpacial.irRight < 30
         
-        if self.__messageSpacial.sonarFront < 120 \
+        if self.__messageSpacial.sonarFront < 100 \
             or self.__messageSpacial.sonarLeft < 80 \
             or self.__messageSpacial.sonarRight < 80 \
             or leftDanger or rightDanger:
@@ -489,8 +490,6 @@ class MissionPlanner(object):
             logPrint('Slow down required:')
             self.__printRangefinderDistances()
             obstaclesDetected = True
-        else:
-            self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
         
         return obstaclesDetected
     
@@ -514,7 +513,6 @@ class MissionPlanner(object):
             
             logPrint('No obstacles detected:')
             self.__printRangefinderDistances()
-            self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
             allClear = True
         
         return allClear
@@ -643,9 +641,8 @@ class MissionPlanner(object):
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
                 if self.__distanceToTarget > 0 and self.__distanceToTarget < 60:
-                    # 30 CM as ranged by the center sonar rangefinder
-                    # TODO: use a constant instead of numeric literal 30.
-                    logger.info('Ranging target: approaching target at slow speed.')
+                    # 60 CM as ranged by the center sonar rangefinder
+                    logPrint('Ranging target: approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
                 
                 # Change this criteria given bumper switches.
@@ -666,7 +663,8 @@ class MissionPlanner(object):
                     self.__currentSearchPattern = self.SEARCH_PATTERN_NA
                 
             else:
-                self.setRunMode(self.MODE_TARGET_SEARCH)
+                if self.__autoAvoidTimer.checkTimeout() < 0:
+                    self.setRunMode(self.MODE_TARGET_SEARCH)
                 self.__searchForTarget()
         
         if (self.currentMode == self.MODE_WAYPOINT_SEARCH \
@@ -674,7 +672,7 @@ class MissionPlanner(object):
             and self.__checkAutoAvoidRequired():
             
             self.setRunMode(self.MODE_AUTO_AVOID)
-            self.__autoAvoidTimer.resetTimeout(2) # 4.0 ~ 10.0 seconds
+            self.__autoAvoidTimer.resetTimeout(1.5) # 4.0 ~ 10.0 seconds
         elif self.__autoAvoidTimer.checkTimeout() < 0 \
             and self.currentMode == self.MODE_AUTO_AVOID:
             
@@ -780,6 +778,11 @@ class MissionPlanner(object):
             # then use the target shape location, since that is more accurate.
             self.__targetShapeX = message.targetColorX
             self.__targetShapeY = message.targetColorY
+        
+        if not message.targtColorVisible:
+            # If we no longer see the target color, then shape is not locked.
+            self.__targetShapeLocked = False
+        
         return
     
     
@@ -1046,16 +1049,18 @@ class MissionPlanner(object):
             self.__turnDirection = self.TURN_RIGHT
         else:
             self.__turnDirection = self.TURN_STRAIGHT
-            
-        pixelError = 6000.0 / distanceToTarget
+        
+        # Such that at 40 cm the cone is ranged across the full field of view
+        pixelError = 8000.0 / distanceToTarget
         self.__turnAngle = abs(self.__targetShapeX - self.CAMERA_HORIZONTAL_CENTER)
-        self.__turnAngle *= self.TURN_RATIO_VISION
         
         if self.__turnAngle < pixelError:
             self.__distanceToTarget = distanceToTarget
         else:
             # Target is not being ranged. Set to -1 invalid.
             self.__distanceToTarget = -1
+        
+        self.__turnAngle *= self.TURN_RATIO_VISION
         
         message = 'Moving toward target x: ' + str(self.__targetShapeX) \
             + ', Scale: ' + str(self.__targetScale) \
