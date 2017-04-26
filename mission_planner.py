@@ -10,9 +10,6 @@ Sequencing: order to achieve way-points
 
 Behaviors: what to do at target way-point, contact, dwell, repetition:
            to achieve way-points a single time only or in a loop.
-
-
-TODO: Implement calibration state machine and process.
 """
 
 import sys, math, time
@@ -274,7 +271,7 @@ class MissionPlanner(object):
     
     __currentSearchPattern = SEARCH_PATTERN_NA
     TARGET_SEARCH_DISTANCE_LIMIT = 20.0 # Meters.
-    TARGET_SCALE_THRESH = 300.0
+    TARGET_SCALE_THRESH = 2000.0
     AUTO_AVOID_DEBOUNCE_COUNT = 12
     
     __staticMap = StaticMap()
@@ -398,19 +395,19 @@ class MissionPlanner(object):
             x = self.__utmGps[0]
             y = self.__utmGps[1]
             plt.scatter([x,],[y,], color='g', marker='s')
-            plt.text(x, y, '   G', rotation=-45)
+            plt.text(x, y, '  G', rotation=0)
         
         if len(self.__utmVector) != 0:
             x = self.__utmVector[0]
             y = self.__utmVector[1]
             plt.scatter([x,],[y,], color='g', marker='v')
-            plt.text(x, y, '   V', rotation=-45)
+            plt.text(x, y, 'V  ', rotation=90)
         
         if not self.__compositeX < 0:
             x = self.__compositeX
             y = self.__compositeY
             plt.scatter([x,],[y,], color='g', marker='*')
-            plt.text(x, y, '   C', rotation=-45)
+            plt.text(x, y, '  C', rotation=-90)
         
         plt.show()
         plt.draw()
@@ -431,7 +428,7 @@ class MissionPlanner(object):
             + ', F: ' + str(self.__messageSpacial.sonarFront) \
             + ', R: ' + str(self.__messageSpacial.sonarRight) \
             + ', IR L: ' + str(self.__messageSpacial.irLeft) \
-            + ', IR R: ' + str(self.__messageSpacial.irRight) \
+            + ', R: ' + str(self.__messageSpacial.irRight) \
             + ', Bumper L: ' + str(self.__messageSpacial.bumperLeft) \
             + ', R: ' + str(self.__messageSpacial.bumperRight)
         
@@ -449,7 +446,7 @@ class MissionPlanner(object):
         
         rightBlocked = self.__messageSpacial.irRight > 87 \
             or self.__messageSpacial.bumperRight
-            
+        
         if self.__messageSpacial.sonarFront < 80 \
             or self.__messageSpacial.sonarLeft < 60 \
             or self.__messageSpacial.sonarRight < 60 \
@@ -529,6 +526,7 @@ class MissionPlanner(object):
             return self.__locations[self.__locationIndex][1]
         else:
             return self.__locations[self.__locationIndex-1][1]
+        return
     
     
     def __selfTest(self):
@@ -578,15 +576,11 @@ class MissionPlanner(object):
     
     
     def __normalOperation(self):
-        """As we would expect, we'll spend most of our time here. 
-        Control actuators, etc..
+        """We'll spend most of our time here. Control left/right motor speed.
         """
         self.__checkShutdown()
         # The following three functions must be called in order:
-        # __computeSpacialPosition()
-        # __computeLocationDistance()
-        # __computeTurnDirection()
-        
+        # computeSpacialPosition, computeLocationDistance, computeTurnDirection
         self.__computeSpacialPosition()
         
         if self.currentMode == self.MODE_HALT:
@@ -596,7 +590,6 @@ class MissionPlanner(object):
         
         # If we are at the last location, then halt.
         if self.__locationIndex >= len(self.__locations):
-            # Halt the robot
             logPrint('Exhausted locations to traverse, stopping.')
             self.setRunMode(self.MODE_HALT)
             self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
@@ -616,15 +609,15 @@ class MissionPlanner(object):
         else:
             self.__motorSpeed = self.SPEED_MAX
         
-        # If we are within a threshold distance from an intermediate location
+        # If we are within a threshold distance from an intermediate location,
         # then increment to the next location.
         currentLocationType = self.__getCurrentLocationType()
         
         if currentLocationType == self.LOCATION_TYPE_WAYPOINT \
             and self.__distanceToLocation <= self.THRESHOLD_WAYPOINT_DISTANCE:
+            
+            logPrint('Reached waypoint, index: ' + str(self.__locationIndex))
             self.__locationIndex += 1
-            logPrint('Reached intermediate waypoint, index: ' \
-                     + str(self.__locationIndex))
             
         elif currentLocationType == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
@@ -645,19 +638,14 @@ class MissionPlanner(object):
                     logPrint('Ranging target: approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
                 
-                # Change this criteria given bumper switches.
                 if self.__messageSpacial.bumperLeft or self.__messageSpacial.bumperRight:
-                    logPrint('Contacted target, incrementing location index: ' \
-                             + str(self.__locationIndex))
-                    
                     self.saveImages()
+                    logPrint('Contacted target, index: ' + str(self.__locationIndex))
                     self.__locationIndex += 1
                     self.__targetSearchDistance = 0
                     # Set the target shape locked member to false after index increment..
                     self.__targetShapeLocked = False
-                    
-                    # Reset our vector location to the current one in the list. 
-                    # We know exactly where we are because we contacted the target.
+                    # Reset our vector location to the previus one in the list. 
                     self.__setVectorPositionToPrevLocation()
                     self.setRunMode(self.MODE_WAYPOINT_SEARCH)
                     self.__currentSearchPattern = self.SEARCH_PATTERN_NA
@@ -682,7 +670,6 @@ class MissionPlanner(object):
         if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0:
             speedLeft = 0
             speedRight = 0
-            
             if self.__turnDirection == self.TURN_LEFT:
                 speedLeft = int(self.__motorSpeed - self.__turnAngle)
                 speedRight = int(self.__motorSpeed)
@@ -697,7 +684,6 @@ class MissionPlanner(object):
                 speedRight = int(self.__motorSpeed)
             
             #print speedLeft, speedRight
-            
             # Set the speed of the right and left motor's
             self.setMotorSpeed(speedLeft, speedRight)
         
@@ -827,7 +813,7 @@ class MissionPlanner(object):
     def setRunMode(self, mode):
         """Set system and spacial controller run modes.
         """
-        if mode == self.__currentMode:
+        if mode == self.currentMode:
             return
         self.__currentMode = mode
         logPrint('Setting system controller mode: ' + self.MODE_NAMES[mode])
@@ -1318,6 +1304,10 @@ def sc():
 def sd():
     """Show the debug UI, not implemented"""
     mp.showDebug()
+    return
+
+def pm():
+    mp.plotMissionCoordinates()
     return
 
 # TODO: enable conditional printing of debug data.
