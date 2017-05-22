@@ -440,14 +440,14 @@ class CameraDataProcessor(DataProcessor):
     ID_CAMERA = 'c'
     
     def __init__(self, missionPlanner):
+        """Constructor"""
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
         return
     
     
     def processMessage(self, message):
-        # Process GPS messages. Compute northing and easting from lat/lon.
-        """
+        """Process message function, call into mission planner and update state.
         """
         self._messagesProcessedCount += 1
         self.__missionPlanner.updateVision(message)

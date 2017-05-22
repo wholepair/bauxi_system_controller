@@ -395,19 +395,19 @@ class MissionPlanner(object):
             x = self.__utmGps[0]
             y = self.__utmGps[1]
             plt.scatter([x,],[y,], color='g', marker='s')
-            plt.text(x, y, '  G', rotation=0)
+            plt.text(x, y, ' G')
         
         if len(self.__utmVector) != 0:
             x = self.__utmVector[0]
             y = self.__utmVector[1]
             plt.scatter([x,],[y,], color='g', marker='v')
-            plt.text(x, y, 'V  ', rotation=90)
+            plt.text(x-3, y, 'V')
         
         if not self.__compositeX < 0:
             x = self.__compositeX
             y = self.__compositeY
             plt.scatter([x,],[y,], color='g', marker='*')
-            plt.text(x, y, '  C', rotation=-90)
+            plt.text(x, y+1, 'C')
         
         plt.show()
         plt.draw()
@@ -959,39 +959,37 @@ class MissionPlanner(object):
         """
         goalX = self.__locations[self.__locationIndex][0][0]
         goalY = self.__locations[self.__locationIndex][0][1]
-        
         heading = self.__headingDegrees
         # Angle between east and where we are and where we want to be.
         angle = math.atan2(goalY - self.__compositeY, goalX - self.__compositeX)
-
         angle *= 180.0 / math.pi # Convert radians to degrees.
-        
         if angle < 0.0:
             angle += 360.0
-        # Now figure out which is the least angle between the direction we are 
-        # heading and the direction we want to face.
         
-        # And determine whether we turn right or left.
+        # Now figure out which is the smallest angle between the direction we  
+        # are heading and the direction we want to head.
         turnAngle = abs(heading - angle)
         if turnAngle > 180.0:
             turnAngle = 360.0 - abs(heading - angle)
         
         self.__turnAngle = turnAngle * self.TURN_RATIO
         self.__crosstrackError = turnAngle
-        if self.__crosstrackError < 2.0:
-            self.__turnAngle = 0
         
-        if angle - heading < 0 and abs(angle - heading) >= 180:
-            self.__turnDirection = self.TURN_LEFT
-        elif angle - heading > 0 and abs(angle - heading) >= 180:
-            self.__turnDirection = self.TURN_RIGHT
-        elif angle - heading < 0 and abs(angle - heading) < 180:
-            self.__turnDirection = self.TURN_RIGHT
-        elif angle - heading > 0 and abs(angle - heading) < 180:
-            self.__turnDirection = self.TURN_LEFT
+        # And determine whether we turn right or left.
+        HEADING_MINUS_ANGLE = heading - angle
+        if HEADING_MINUS_ANGLE < 0:
+            if abs(HEADING_MINUS_ANGLE) < 180:
+                self.__turnDirection = self.TURN_LEFT
+            else:
+                self.__turnDirection = self.TURN_RIGHT
+        elif HEADING_MINUS_ANGLE > 0:
+            if abs(HEADING_MINUS_ANGLE) < 180:
+                self.__turnDirection = self.TURN_RIGHT
+            else:
+                self.__turnDirection = self.TURN_LEFT
         else:
             self.__turnDirection = self.TURN_STRAIGHT
-        return turnAngle
+        return
     
     
     def __searchForTarget(self):
