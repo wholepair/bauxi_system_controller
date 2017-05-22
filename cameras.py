@@ -39,6 +39,7 @@ class Camera(object):
         self._maskName = self._deviceName + ' Mask'
         self._resName = self._deviceName + ' Res'
         
+        self.__updatingTrackbar = False
         self._cap = None
         
         self._hue = filterProperties[0]
@@ -83,7 +84,7 @@ class Camera(object):
             component = threshold
             print ',', name, 'is now', component, ', threshold', threshold
         elif component + threshold > 255:
-            print name, " plus threshold > 255, clamping value:", component,
+            print name, 'plus threshold > 255, clamping value:', component,
             component = 255 - threshold
             print ',', name, 'is now', component, ', threshold', threshold
         else:
@@ -132,11 +133,14 @@ class Camera(object):
             self._hue, self._sat, self._brt = colorHsb
             print 'X, Y:', self.__colorX, self.__colorY
             print 'New RGB:', red, green, blue
+            print 'New HSB:', self._hue, self._sat, self._brt
             cv2.circle(frame,(self.__colorX, self.__colorY), 20, (blue,green,red), -1)
             if os.uname()[4][:3] != 'arm':
                 # Setting the positions also updates HSV.
+                self.__updatingTrackbar = True
+                self.__updateColorThresholds()
                 self.__setTrackbarPosColor()
-                self.__trackbarChanged(None)
+                self.__updatingTrackbar = False
             else:
                 self.__updateColorThresholds()
             
@@ -239,6 +243,8 @@ class Camera(object):
         """Set the hue, saturation, and value and thresholds based on changing
         the trackpbar sliders
         """
+        if self.__updatingTrackbar:
+            return
         
         self._hue = cv2.getTrackbarPos('H', self._resName)
         self._sat = cv2.getTrackbarPos('S', self._resName)
@@ -311,8 +317,10 @@ class Camera(object):
                 cv2.createTrackbar('ST', self._resName, 0, 127, self.__trackbarChanged)
                 cv2.createTrackbar('BT', self._resName, 0, 127, self.__trackbarChanged)
                 
+                self.__updatingTrackbar = True
                 self.__setTrackbarPosColor()
                 self.__setTrackbarPosThresh()
+                self.__updatingTrackbar = False
             
             cv2.setMouseCallback(self._frameName, self.__mouseCallback)
         else:
