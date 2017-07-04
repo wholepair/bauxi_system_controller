@@ -102,7 +102,7 @@ class Camera(object):
                 , self._threshSat, "saturation")
         
         self._brt, cv = self.__clampColorComponent(self._brt
-                , self._threshHue, "brightness")
+                , self._threshBrt, "brightness")
         
         print 'New HSB:', self._hue, self._sat, self._brt
         print 'HSB Thresholds:', self._threshHue, self._threshSat, self._threshBrt
@@ -182,7 +182,7 @@ class Camera(object):
             epsilon = 0.05 * cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, epsilon, True)
             # Draw the approximate polygon. If it has three sides, it is a cone?
-            if len(approx) == 3:
+            if len(approx) == 3 or len(approx) == 4:
                 self.__targetShapeVisible = True
                 self.__targetScale = area
                 cv2.polylines(frame, [approx], True, (0,255,255))

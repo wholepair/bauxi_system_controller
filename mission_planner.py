@@ -172,7 +172,7 @@ class MissionPlanner(object):
     # Normal operating modes, may also be used in the development state:
     # Modes are externally visible behavior modes. 
     MODE_UNKNOWN = -1
-    MODE_WAYPOINT_SEARCH = 0 # Use vector navigation and GPS, move to waypoint. 
+    MODE_WAYPOINT_SEARCH = 0 # Use vector navigation and GPS, move to waypoint.
     MODE_TARGET_SEARCH = 1   # Looking for a target object (visual search)
     MODE_TARGET_TRACKING = 2 # Target is visually acquired, track it.
     MODE_CALIBRATION = 3     # Calibrate inertial measurement subsystem.
