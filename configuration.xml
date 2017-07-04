@@ -1,6 +1,6 @@
 <configuration>
     <!-- Mission file, contains Lat/Lon: -->
-    <mission>friendly.gpx</mission>
+    <mission>mission.gpx</mission>
     <!-- Port Configurations -->
     <port>
         <name>/dev/serial/by-id/usb-FTDI_TTL232R-3V3_FTH7JURZ-if00-port0</name>
@@ -24,13 +24,13 @@
         <!-- Alternate names are: /dev/video0, video1, etc.. -->
         <color>
             <!-- Use the HSB coror model to describe the target's color: -->
-            <hue>20</hue>
-            <saturation>215</saturation>
-            <brightness>235</brightness>
+            <hue>178</hue>
+            <saturation>194</saturation>
+            <brightness>196</brightness>
             <!-- Threshold values for hue saturation and value: -->
-            <thresh_h>20</thresh_h>
-            <thresh_s>40</thresh_s>
-            <thresh_b>60</thresh_b>
+            <thresh_h>35</thresh_h>
+            <thresh_s>50</thresh_s>
+            <thresh_b>90</thresh_b>
         </color>
         <!-- Ultimately we want to store a set of SIFT/FAST keypoints to
          to describe the target's geometry: -->
