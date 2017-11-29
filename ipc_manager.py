@@ -12,7 +12,7 @@ import logging
 
 import cameras
         
-logger = logging.getLogger()
+logger = logging.getLogger('system_controller')
 hdlr = logging.FileHandler('system_controller.log')
 formatter = logging.Formatter('%(asctime)s %(threadName)s %(levelname)s %(message)s')
 hdlr.setFormatter(formatter)
@@ -705,7 +705,7 @@ class IpcManager(object):
     def __init__(self, port, configuration):
         # Open the designated communications channel:
         # Optionally instantiate a camera...
-        if type(configuration) != tuple:
+        if type(configuration) != list:
             # For the serial port, all we need is its name and baudrate.
             try:
                 baudrate = configuration

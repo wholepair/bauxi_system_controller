@@ -50,11 +50,49 @@ class Configuration(object):
         """XML Parameter parser for the camera sub-system.
         """
         
+        class Color(object):
+            
+            def __init__(self, hue, saturation, brightness
+                         , threshHue, threshSat, threshBrt):
+                
+                self.__hue = hue
+                self.__sat = saturation
+                self.__brt = brightness
+                self.__threshHue = threshHue
+                self.__threshSat = threshSat
+                self.__threshBrt = threshBrt
+                return
+            
+            @property
+            def hue(self):
+                return self.__hue
+            
+            @property
+            def sat(self):
+                return self.__sat
+            
+            @property
+            def brt(self):
+                return self.__brt
+            
+            @property
+            def threshHue(self):
+                return self.__threshHue
+            
+            @property
+            def threshSat(self):
+                return self.__threshSat
+            
+            @property
+            def threshBrt(self):
+                return self.__threshBrt
+            
+        
         def __init__(self, cameraNode):
             """ Camera target color initializer.
             """
             self.__name = None
-            self.__properties = None
+            self.__filterProperties = []
             for child in cameraNode:
                 if type(child) == etree._Comment: continue
                 elif child.tag == 'name':
@@ -63,17 +101,21 @@ class Configuration(object):
                     for prop in child:
                         if type(prop) == etree._Comment: continue
                         elif prop.tag == 'hue':
-                            self.__hue = int(prop.text)
+                            hue = int(prop.text)
                         elif prop.tag == 'saturation':
-                            self.__saturation = int(prop.text)
+                            saturation = int(prop.text)
                         elif prop.tag == 'brightness':
-                            self.__brightness = int(prop.text)
+                            brightness = int(prop.text)
                         elif prop.tag == 'thresh_h':
-                            self.__threshHue = int(prop.text)
+                            threshHue = int(prop.text)
                         elif prop.tag == 'thresh_s':
-                            self.__threshSat = int(prop.text)
+                            threshSat = int(prop.text)
                         elif prop.tag == 'thresh_b':
-                            self.__threshBrt = int(prop.text)
+                            threshBrt = int(prop.text)
+                    color = self.Color(hue, saturation, brightness
+                                      , threshHue, threshSat, threshBrt)
+                    
+                    self.__filterProperties.append(color)
             return
         
         @property
@@ -82,8 +124,7 @@ class Configuration(object):
     
         @property
         def filterProperties(self):
-            return (self.__hue, self.__saturation, self.__brightness
-                  , self.__threshHue, self.__threshSat, self.__threshBrt)
+            return self.__filterProperties
             
         
     
@@ -264,7 +305,7 @@ class DataProcessor(object):
         while self.__runService:
             for m in self.__ipcManagers:
                 if not self.__runService:
-                    logger.info("Data processor run service = False")
+                    logger.info("Stop requested, data processor run service = False")
                     break
                 # Check for None message type and skip process step.
                 message = m.getMessage()

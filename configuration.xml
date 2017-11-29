@@ -1,6 +1,6 @@
 <configuration>
     <!-- Mission file, contains Lat/Lon: -->
-    <mission>mission.gpx</mission>
+    <mission>mercer_island.gpx</mission>
     <!-- Port Configurations -->
     <port>
         <name>/dev/serial/by-id/usb-FTDI_TTL232R-3V3_FTH7JURZ-if00-port0</name>
@@ -15,22 +15,30 @@
         <rate>57600</rate>
     </port>
     <!-- Encoder configuration section. Counts per meter: -->
-    <encoder_counts_per_meter>2687</encoder_counts_per_meter>
+    <encoder_counts_per_meter>2858</encoder_counts_per_meter>
     
     <!-- Cammera configuration section -->
     <camera>
         <!-- Cammera device name: -->
-        <name>/dev/video0</name>
+        <name>PiCamera</name>
         <!-- Alternate names are: /dev/video0, video1, etc.. -->
         <color>
-            <!-- Use the HSB coror model to describe the target's color: -->
+            <!-- Use the HSB color model to describe the target's color: -->
             <hue>178</hue>
             <saturation>194</saturation>
             <brightness>196</brightness>
             <!-- Threshold values for hue saturation and value: -->
-            <thresh_h>35</thresh_h>
+            <thresh_h>20</thresh_h>
             <thresh_s>50</thresh_s>
             <thresh_b>90</thresh_b>
+        </color>
+        <color>
+            <hue>13</hue>
+            <saturation>253</saturation>
+            <brightness>243</brightness>
+            <thresh_h>18</thresh_h>
+            <thresh_s>40</thresh_s>
+            <thresh_b>80</thresh_b>
         </color>
         <!-- Ultimately we want to store a set of SIFT/FAST keypoints to
          to describe the target's geometry: -->
@@ -39,6 +47,7 @@
     <!-- Compass configuration: -->
     <compass>
         <!-- The difference between magnetic north and true north: -->
-        <declination>-13.45</declination>
+        <!-- -15.76 for Mercer Island  -->
+        <declination>-8.0</declination>
     </compass>
 </configuration>
