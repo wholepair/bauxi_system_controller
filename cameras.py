@@ -17,9 +17,29 @@ if os.uname()[4][:3] == 'arm':
 
 import time
 
+import logging
+logger = logging.getLogger('system_controller')
+
 def getCvVersion():
     return cv2.__version__
 
+
+class Color(object):
+    
+    def __init__(self, color):
+        
+        self.hue = color.hue
+        self.sat = color.sat
+        self.brt = color.brt
+        self.threshHue = color.threshHue
+        self.threshSat = color.threshSat
+        self.threshBrt = color.threshBrt
+        logger.info('Auxiliary filter color HSB: ' + str(self.hue) + ', '
+                    + str(self.sat) + ', ' + str(self.brt))
+        
+        logger.info('Auxiliary filter thresholds: ' + str(self.threshHue) + ', '
+                    + str(self.threshSat) + ', ' + str(self.threshBrt))
+        return
 
 ###############################################################################
 # CAMERA: generic base class.
@@ -42,13 +62,16 @@ class Camera(object):
         self.__updatingTrackbar = False
         self._cap = None
         
-        self._hue = filterProperties[0]
-        self._sat = filterProperties[1]
-        self._brt = filterProperties[2]
+        self._hue = filterProperties[0].hue
+        self._sat = filterProperties[0].sat
+        self._brt = filterProperties[0].brt
+        self._threshHue = filterProperties[0].threshHue
+        self._threshSat = filterProperties[0].threshSat
+        self._threshBrt = filterProperties[0].threshBrt
         
-        self._threshHue = filterProperties[3]
-        self._threshSat = filterProperties[4]
-        self._threshBrt = filterProperties[5]
+        self.__colors = [] # Store auxiliary filter colors here.
+        for color in filterProperties[1:]:
+            self.__colors.append(Color(color))
         
         self.__updateColorThresholds()
         
@@ -72,6 +95,7 @@ class Camera(object):
         self.__targetShapeY = -1
         # Number of triangular targets.
         self.__targetCount = 0
+        self.__currentMaskIsPrimary = True
         # Turn this off for no X
         #self.showImages(True)
         return
@@ -104,7 +128,9 @@ class Camera(object):
         self._brt, cv = self.__clampColorComponent(self._brt
                 , self._threshBrt, "brightness")
         
-        print 'New HSB:', self._hue, self._sat, self._brt
+        logger.info('New HSB: ' + str(self._hue) + ', ' 
+                    + str(self._sat) + ', ' + str(self._brt))
+        
         print 'HSB Thresholds:', self._threshHue, self._threshSat, self._threshBrt
         
         # define range of color in HSV
@@ -116,8 +142,8 @@ class Camera(object):
                                    , self._sat + self._threshSat
                                    , self._brt + self._threshBrt])
         
-        print "Filter upper bounds:", self._upperColor
-        print "Filter lower bounds:", self._lowerColor
+        logger.info('Filter upper bounds: ' + str(self._upperColor))
+        logger.info('Filter lower bounds: ' + str(self._lowerColor))
         return ch or cs or cv # If we moved a component, we need to update UI.
     
     
@@ -143,10 +169,48 @@ class Camera(object):
                 self.__updatingTrackbar = False
             else:
                 self.__updateColorThresholds()
-            
+        
         hsvImage = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         # Threshold the HSV image to get only orange colors
         mask = cv2.inRange(hsvImage, self._lowerColor, self._upperColor)
+        
+        auxMask = None
+        for color in self.__colors:
+            lowerColor = np.array([color.hue - color.threshHue
+                                 , color.sat - color.threshSat
+                                 , color.brt - color.threshBrt])
+            
+            upperColor = np.array([color.hue + color.threshHue
+                                 , color.sat + color.threshSat
+                                 , color.brt + color.threshBrt])
+            
+            tmpMask = cv2.inRange(hsvImage, lowerColor, upperColor)
+            
+            if True:
+                # Just make an OR of the primary and aux mask.
+                mask = cv2.bitwise_or(mask, tmpMask)
+            else:
+                # Switch between the primary filter and aux filter colors.
+                if auxMask is None:
+                    auxMask = tmpMask
+                
+                auxMask = cv2.bitwise_or(auxMask, tmpMask)
+                # Check to see if we currently see the target, if we do great
+                # keep the current filter in use, if not, switch the filter.
+                if self.__targetShapeVisible and self.__targetCount < 5:
+                    # Restore filter that is working.
+                    if not self.__currentMaskIsPrimary:
+                        mask = auxMask # Override primary with aux.
+                else:
+                    # Ping pong logic.
+                    if self.__currentMaskIsPrimary:
+                        mask = auxMask # Override primary with aux.
+                        self.__currentMaskIsPrimary = False
+                        print 'ping'
+                    else:
+                        self.__currentMaskIsPrimary = True
+                        print 'pong'
+        
         # Bitwise-AND mask and original image
         res = cv2.bitwise_and(frame, frame, mask=mask)
         
@@ -157,12 +221,10 @@ class Camera(object):
             cx, cy = int(M['m10'] / M['m00']), int(M['m01'] / M['m00'])
             # Annotate the image with a circle in the centroid.
             cv2.circle(frame, (cx, cy), 10, (255, 0, 0), -1)
-            # Center of mass of color:
-            self.__targetColorX = cx
-            self.__targetColorY = cy
         else:
             self.__targetColorVisible = False
-            # Maybe also set the X and Y coords to -1 too.
+            self.__targetColorX = -1
+            self.__targetColorY = -1
 
         (_, contours, _) = cv2.findContours(mask.copy()
             , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -192,13 +254,18 @@ class Camera(object):
             if M['m00'] != 0:
                 cx, cy = int(M['m10'] / M['m00']), int(M['m01'] / M['m00'])
                 # Annotate the image with a circle in the centroid.
-                if len(approx) == 3:
+                if self.__targetShapeVisible:
                     cv2.circle(frame, (cx, cy), 3, (0, 0, 255), -1)
                     cv2.putText(frame,'Cone',(cx,cy), self.FONT, 4,(255,255,255),2)
                     self.__targetShapeX = cx
                     self.__targetShapeY = cy
                 else:
-                    cv2.circle(frame, (cx, cy), 3, (255, 0, 0), -1)
+                    cv2.circle(frame, (cx, cy), 3, (0, 255, 0), -1)
+                    # Center of mass of color:
+                    self.__targetColorX = cx
+                    self.__targetColorY = cy
+                    self.__targetShapeX = -1
+                    self.__targetShapeY = -1
             
         
         if self.__saveImages == True:
@@ -296,9 +363,9 @@ class Camera(object):
     
     
     def __setupImageWindows(self):
-        print 'Setting up image window.'
+        logger.info('Setting up image window.')
         if self.__windowsInit == False:
-            print 'Initializing window controls.'
+            logger.info('Initializing window controls.')
             # Conditionally start the window thread.
             cv2.startWindowThread()
             
@@ -324,7 +391,7 @@ class Camera(object):
             
             cv2.setMouseCallback(self._frameName, self.__mouseCallback)
         else:
-            print 'Window is already initialized.'
+            logger.warning('Window is already initialized.')
         return
     
     
@@ -392,7 +459,7 @@ class RaspPiCamera(Camera):
         # initialize the camera and grab a reference to the raw camera capture
         self._cap = PiCamera()
         self._cap.resolution = (640, 480)
-        self._cap.framerate = 32
+        self._cap.framerate = 30
         self.__rawCapture = PiRGBArray(self._cap, size=self._cap.resolution)
         
         #self._cap.start_preview()
@@ -441,7 +508,7 @@ class WebCamera(Camera):
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         time.sleep(0.1)
         if not self._cap.isOpened():
-            print "Cannot open camera!"
+            logger.error('Cannot open camera.')
         return
     
     
@@ -466,7 +533,7 @@ class WebCamera(Camera):
     def close(self):
         """Release and close the camera device.
         """
-        print 'Releasing:', repr(self)
+        logger.info('Releasing:' + repr(self))
         self._cap.release()
         return
     
@@ -475,8 +542,6 @@ class WebCamera(Camera):
 # CAMERA WRAPPER: give the camera a serial interface.
 ###############################################################################
 
-# TODO: implement wrapper class to turn the camera's into serial ports :)
-# implement readline, open close etc..
 class CameraWrapper(object):
     
     ID_CAMERA = 'c'
