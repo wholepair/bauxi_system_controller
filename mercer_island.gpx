@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gpx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.1" creator="Bing Maps">
+    <metadata>
+        <name>Unsaved places</name>
+        <desc />
+    </metadata>
+    <rte>
+        <name>mercer_island</name>
+        <desc />
+        <rtept lat="47.580672" lon="-122.235899" type="start" handle="start" />
+        <!-- <rtept lat="47.5806840138" lon="-122.235850138" type="start" handle="start GPS BAD!" /> -->
+        <rtept lat="47.581013" lon="-122.235793" type="target" handle="sun" />
+        <!-- <rtept lat="47.580557796" lon="-122.233965972" type="target" handle="sun GPS BAD!" /> -->
+        <rtept lat="47.580970" lon="-122.235730" type="target" handle="ramp" />
+        <!-- <rtept lat="47.580919138" lon="-122.235755305" type="target" handle="ramp GPS BAD!" /> -->
+        <!-- <rtept lat="47.580991" lon="-122.235749" type="waypoint" handle="waypoint" /> -->
+        <rtept lat="47.581018" lon="-122.235668" type="target" handle="trees" />
+        <!-- <rtept lat="47.580408101" lon="-122.23452206" type="target" handle="trees GPS BAD!" /> -->
+       
+    </rte>
+</gpx>
