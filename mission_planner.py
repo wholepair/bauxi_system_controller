@@ -198,13 +198,11 @@ class MissionPlanner(object):
     
     # Spacial controllers modes of operation, see
     SPACIAL_MODE_UNSET = -1
-    SPACIAL_MODE_REMOTE_CONTROL  = 0 # Rely on remote (radio) control for movement.
-    SPACIAL_MODE_SYS_CONTROL     = 1 # Rely on external software control commands.
-    SPACIAL_MODE_AUTO_AVOID      = 2 # Use sensors to automatically avoid objects.
-    SPACIAL_MODE_MANUAL_OVERRIDE = 3 # Manual override radio dead-man control.
+    SPACIAL_MODE_SYS_CONTROL     = 0 # Rely on external software control commands.
+    SPACIAL_MODE_AUTO_AVOID      = 1 # Use sensors to automatically avoid objects.
+    SPACIAL_MODE_MANUAL_OVERRIDE = 2 # Manual override radio dead-man control.
     
     SPACIAL_MODE_NAMES = { SPACIAL_MODE_UNSET           : 'SPACIAL_MODE_UNSET'
-                         , SPACIAL_MODE_REMOTE_CONTROL  : 'SPACIAL_MODE_REMOTE_CONTROL'
                          , SPACIAL_MODE_SYS_CONTROL     : 'SPACIAL_MODE_SYS_CONTROL'
                          , SPACIAL_MODE_AUTO_AVOID      : 'SPACIAL_MODE_AUTO_AVOID'
                          , SPACIAL_MODE_MANUAL_OVERRIDE : 'SPACIAL_MODE_MANUAL_OVERRIDE'
@@ -214,9 +212,9 @@ class MissionPlanner(object):
     
     # Modes of the radio, hand controller. aka dead-man switch
     RADIO_MODE_UNSET  = -1
-    RADIO_MODE_MOTION_DISABLED  = 0
-    RADIO_MODE_MOTION_ENABLED_AUTO = 1
-    RADIO_MODE_MOTION_ENABLED_REMOTE = 2
+    RADIO_MODE_MOTION_DISABLED       = 0 # Dead man switch disabling motion.
+    RADIO_MODE_MOTION_ENABLED_AUTO   = 1 # Autonomous operation (system controler)
+    RADIO_MODE_MOTION_ENABLED_REMOTE = 2 # Remote control (hand controller joystick)
     
     RADIO_MODE_NAMES = { RADIO_MODE_UNSET                 : 'RADIO_MODE_UNSET'
                        , RADIO_MODE_MOTION_DISABLED       : 'RADIO_MODE_MOTION_DISABLED'
@@ -595,8 +593,7 @@ class MissionPlanner(object):
         self.__computeSpacialPosition()
         
         if self.currentMode == self.MODE_HALT:
-            if self.__radioMode != self.RADIO_MODE_MOTION_ENABLED_REMOTE:
-                self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
+            self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
             return
         
         # If we are at the last location, then halt.
@@ -836,8 +833,6 @@ class MissionPlanner(object):
         # Set the run mode of the spacial controller
         if mode == self.MODE_AUTO_AVOID:
             self.__setRunModeSpacial(self.SPACIAL_MODE_AUTO_AVOID)
-        elif mode == self.MODE_REMOTE_CONTROL:
-            self.__setRunModeSpacial(self.SPACIAL_MODE_REMOTE_CONTROL)
         elif mode == self.MODE_HALT:
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         else:
