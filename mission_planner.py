@@ -275,9 +275,40 @@ class MissionPlanner(object):
     TARGET_SEARCH_DISTANCE_LIMIT = 20.0 # Meters.
     DISTANCE_LIMIT_DIVISION = TARGET_SEARCH_DISTANCE_LIMIT / 3.0
     TARGET_SCALE_THRESH = 2000.0
-    AUTO_AVOID_DEBOUNCE_COUNT = 5
+    AUTO_AVOID_DEBOUNCE_COUNT = 3
+    
+    # Thresholds for obstacle avoidance
+    DIST_THRESH_AVOID_SONAR_SIDE = 86
+    DIST_THRESH_AVOID_SONAR_FRONT = 100
+    DIST_THRESH_AVOID_IR_MIN = 25
+    DIST_THRESH_AVOID_IR_MAX = 85
+    DIST_THRESHOLDS_OBSTACLE = ( DIST_THRESH_AVOID_SONAR_SIDE
+                                 , DIST_THRESH_AVOID_SONAR_FRONT
+                                 , DIST_THRESH_AVOID_IR_MIN
+                                 , DIST_THRESH_AVOID_IR_MAX )
+    
+    # Thresholds for slowing down because of obstacles.
+    DIST_THRESH_SLOW_SONAR_SIDE = 100
+    DIST_THRESH_SLOW_SONAR_FRONT = 120
+    DIST_THRESH_SLOW_IR_MIN = 40
+    DIST_THRESH_SLOW_IR_MAX = 70
+    DIST_THRESHOLDS_SLOW = ( DIST_THRESH_SLOW_SONAR_SIDE
+                             , DIST_THRESH_SLOW_SONAR_FRONT
+                             , DIST_THRESH_SLOW_IR_MIN
+                             , DIST_THRESH_SLOW_IR_MAX )
+    
+    # Thresholds for slowing down because of obstacles.
+    DIST_THRESH_CLEAR_SONAR_SIDE = 120
+    DIST_THRESH_CLEAR_SONAR_FRONT = 150
+    DIST_THRESH_CLEAR_IR_MIN = 45
+    DIST_THRESH_CLEAR_IR_MAX = 65
+    DIST_THRESHOLDS_CLEAR = ( DIST_THRESH_CLEAR_SONAR_SIDE
+                             , DIST_THRESH_CLEAR_SONAR_FRONT
+                             , DIST_THRESH_CLEAR_IR_MIN
+                             , DIST_THRESH_CLEAR_IR_MAX )
     
     __staticMap = StaticMap()
+    
     
     def __init__(self):
         """ Constructor
@@ -426,14 +457,40 @@ class MissionPlanner(object):
         return
     
     
-    def __printRangefinderDistances(self, printMsg=True, logLevel=LOG_LEVEL_INFO):
+    def __printRangefinderDistances(self, distanceThresholds, printMsg=True
+                                    , logLevel=LOG_LEVEL_INFO):
+        
         message = 'Sonar L: ' + str(self.__messageSpacial.sonarLeft) \
             + ', F: ' + str(self.__messageSpacial.sonarFront) \
             + ', R: ' + str(self.__messageSpacial.sonarRight) \
             + ', IR L: ' + str(self.__messageSpacial.irLeft) \
             + ', R: ' + str(self.__messageSpacial.irRight) \
-            + ', Bumper L: ' + str(self.__messageSpacial.bumperLeft) \
-            + ', R: ' + str(self.__messageSpacial.bumperRight)
+            + ', Bumper L: ' + str(int(self.__messageSpacial.bumperLeft)) \
+            + ', R: ' + str(int(self.__messageSpacial.bumperRight))
+        
+        if self.__messageSpacial.sonarLeft < distanceThresholds[0]:
+            logPrint('Sonar left, out of range, threshold: ' \
+                     + str(distanceThresholds[0]), printMsg, logLevel)
+        if self.__messageSpacial.sonarFront < distanceThresholds[1]:
+            logPrint('Sonar front, out of range, threshold: ' \
+                     + str(distanceThresholds[1]), printMsg, logLevel)
+        if self.__messageSpacial.sonarRight < distanceThresholds[0]:
+            logPrint('Sonar right, out of range, threshold: ' \
+                     + str(distanceThresholds[0]), printMsg, logLevel)
+        if self.__messageSpacial.irLeft < distanceThresholds[2] \
+                or self.__messageSpacial.irLeft > distanceThresholds[3]:
+            logPrint('IR left, out of range, thresholds: ' \
+                     + str((distanceThresholds[2], distanceThresholds[3]))
+                     , printMsg, logLevel)
+        if self.__messageSpacial.irRight < distanceThresholds[2] \
+                or self.__messageSpacial.irRight > distanceThresholds[3]:
+            logPrint('IR right, out of range, thresholds: ' \
+                     + str((distanceThresholds[2], distanceThresholds[3]))
+                     , printMsg, logLevel)
+        if self.__messageSpacial.bumperLeft:
+            logPrint('Bumper left, pressed', printMsg, logLevel)
+        if self.__messageSpacial.bumperRight:
+            logPrint('Bumper right, pressed', printMsg, logLevel)
         
         logPrint(message, printMsg, logLevel)
         return
@@ -444,23 +501,25 @@ class MissionPlanner(object):
         microcontroller controll."""
         autoAvoidNeeded = False
         
-        leftBlocked = self.__messageSpacial.irLeft > 87 \
-            or self.__messageSpacial.irLeft < 24 \
+        leftBlocked = self.__messageSpacial.irLeft > self.DIST_THRESH_AVOID_IR_MAX \
+            or self.__messageSpacial.irLeft < self.DIST_THRESH_AVOID_IR_MIN \
             or self.__messageSpacial.bumperLeft
         
-        rightBlocked = self.__messageSpacial.irRight > 87 \
-            or self.__messageSpacial.irRight < 24 \
+        rightBlocked = self.__messageSpacial.irRight > self.DIST_THRESH_AVOID_IR_MAX \
+            or self.__messageSpacial.irRight < self.DIST_THRESH_AVOID_IR_MIN \
             or self.__messageSpacial.bumperRight
         
-        if self.__messageSpacial.sonarFront < 100 \
-            or self.__messageSpacial.sonarLeft < 80 \
-            or self.__messageSpacial.sonarRight < 80 \
+        if self.__messageSpacial.sonarFront < self.DIST_THRESH_AVOID_SONAR_FRONT \
+            or self.__messageSpacial.sonarLeft < self.DIST_THRESH_AVOID_SONAR_SIDE \
+            or self.__messageSpacial.sonarRight < self.DIST_THRESH_AVOID_SONAR_SIDE \
             or leftBlocked or rightBlocked:
             
             self.__autoAvoidCountdown -= 1
-            self.__printRangefinderDistances()
+            self.__printRangefinderDistances(self.DIST_THRESHOLDS_OBSTACLE)
             if self.__autoAvoidCountdown <= 0:
-                logPrint('Auto avoidance required:')
+                # Because of the debouncing here, this will only print once until
+                # the next mode switch between system control and spacial control.
+                logPrint('Auto avoidance required, mode changing to AUTO_AVOID')
                 self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
                 autoAvoidNeeded = True
             else:
@@ -482,19 +541,19 @@ class MissionPlanner(object):
         """Determine if we need to slow down due to detected objects"""
         obstaclesDetected = False
         
-        leftDanger = self.__messageSpacial.irLeft > 80 \
-            or self.__messageSpacial.irLeft < 30
+        leftDanger = self.__messageSpacial.irLeft > self.DIST_THRESH_SLOW_IR_MAX \
+            or self.__messageSpacial.irLeft < self.DIST_THRESH_SLOW_IR_MIN
         
-        rightDanger = self.__messageSpacial.irRight > 80 \
-            or self.__messageSpacial.irRight < 30
+        rightDanger = self.__messageSpacial.irRight > self.DIST_THRESH_SLOW_IR_MAX \
+            or self.__messageSpacial.irRight < self.DIST_THRESH_SLOW_IR_MIN
         
-        if self.__messageSpacial.sonarFront < 120 \
-            or self.__messageSpacial.sonarLeft < 100 \
-            or self.__messageSpacial.sonarRight < 100 \
+        if self.__messageSpacial.sonarFront < self.DIST_THRESH_SLOW_SONAR_FRONT \
+            or self.__messageSpacial.sonarLeft < self.DIST_THRESH_SLOW_SONAR_SIDE \
+            or self.__messageSpacial.sonarRight < self.DIST_THRESH_SLOW_SONAR_SIDE \
             or leftDanger or rightDanger:
             
             logPrint('Slow down required:')
-            self.__printRangefinderDistances()
+            self.__printRangefinderDistances(self.DIST_THRESHOLDS_SLOW)
             obstaclesDetected = True
         
         return obstaclesDetected
@@ -504,21 +563,22 @@ class MissionPlanner(object):
         """Determine if we can drive more quickly due to no perceived obstacles"""
         allClear = False
         
-        leftClear = self.__messageSpacial.irLeft < 75 \
-            and self.__messageSpacial.irLeft > 45 \
+        leftClear = self.__messageSpacial.irLeft < self.DIST_THRESH_CLEAR_IR_MAX \
+            and self.__messageSpacial.irLeft > self.DIST_THRESH_CLEAR_IR_MIN \
             and not self.__messageSpacial.bumperLeft
         
-        rightClear = self.__messageSpacial.irRight < 75 \
-            and self.__messageSpacial.irRight > 45 \
+        rightClear = self.__messageSpacial.irRight < self.DIST_THRESH_CLEAR_IR_MAX \
+            and self.__messageSpacial.irRight > self.DIST_THRESH_CLEAR_IR_MIN \
             and not self.__messageSpacial.bumperRight
         
-        if self.__messageSpacial.sonarFront > 150 \
-            and self.__messageSpacial.sonarLeft > 100 \
-            and self.__messageSpacial.sonarRight > 100 \
+        if self.__messageSpacial.sonarFront > self.DIST_THRESH_CLEAR_SONAR_FRONT \
+            and self.__messageSpacial.sonarLeft > self.DIST_THRESH_CLEAR_SONAR_SIDE \
+            and self.__messageSpacial.sonarRight > self.DIST_THRESH_CLEAR_SONAR_SIDE \
             and leftClear and rightClear:
             
             logPrint('No obstacles detected:', False, LOG_LEVEL_DEBUG)
-            self.__printRangefinderDistances(False, LOG_LEVEL_DEBUG)
+            self.__printRangefinderDistances(self.DIST_THRESHOLDS_CLEAR
+                                             , False, LOG_LEVEL_DEBUG)
             allClear = True
         
         return allClear
@@ -828,8 +888,11 @@ class MissionPlanner(object):
         """
         if mode == self.currentMode:
             return
+        
         self.__currentMode = mode
-        logPrint('Setting system controller mode: ' + self.MODE_NAMES[mode])
+        logPrint('Setting system controller mode: ' + self.MODE_NAMES[mode]
+                 + ' location index: ' + str(self.__locationIndex))
+        
         # Set the run mode of the spacial controller
         if mode == self.MODE_AUTO_AVOID:
             self.__setRunModeSpacial(self.SPACIAL_MODE_AUTO_AVOID)
@@ -1338,6 +1401,7 @@ def pd(period=0):
     # Period in seconds.
     while True:
         mp.printDebug()
+        mp.plotMissionCoordinates() # also update the graph, why not.
         if period == 0: break
         time.sleep(period) # Sleep in seconds.
     return
