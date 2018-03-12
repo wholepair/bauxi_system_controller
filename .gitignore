@@ -7,3 +7,5 @@ google_api_key.txt
 .project
 .pydevproject
 .settings/
+./images/*
+
