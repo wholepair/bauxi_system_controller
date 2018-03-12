@@ -272,9 +272,9 @@ class Camera(object):
             self.__saveImages = False
             print 'Saving images: frame.jpg, mask.jpg, res.jpg.'
             timeStamp = str(time.time())
-            cv2.imwrite('frame' + timeStamp + '.jpg', frame)
-            cv2.imwrite('mask' + timeStamp + '.jpg', mask)
-            cv2.imwrite('res' + timeStamp + '.jpg', res)
+            cv2.imwrite('./images/frame' + timeStamp + '.jpg', frame)
+            cv2.imwrite('./images/mask' + timeStamp + '.jpg', mask)
+            cv2.imwrite('./images/res' + timeStamp + '.jpg', res)
         
         if self.__showWindow == True:
             if self.__windowsInit == False:
