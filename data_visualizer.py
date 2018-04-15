@@ -8,8 +8,6 @@ DataVisualizer - Parent class for various sensor visualizers
 InertialVisualizer - heading (mag + gyro), accelerometer, etc
 SpacialVisualizer - sensor distances, encoder counts, speed, stuff
 SystemVisualizer - GPS, vector, intertial and composit position, waypoints, map
-
-
 """
 
 import numpy as np
@@ -20,7 +18,7 @@ WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
 BLUE = (255, 0, 0)
 
-RAD_PER_DEG = (2.0 * np.pi) / 360.0
+DEG_PER_RAD = 180.0 / math.pi
 
 class DataVisualizer(object):
     """ Base class providing basic drawing functions. Inheritors can implement
@@ -85,42 +83,84 @@ class DataVisualizer(object):
     # acceleration -> Speed -> Distance, at each integration step create a
     # vector using the heading from the compass/gyro combination and sum it.
     # 
-    #  
-    
-    
+
+
 class InertialVisualizer(DataVisualizer):
     def __init__(self):
         """Constructor."""
         height = 500
         width = 500
         self.__compassRadius = 200
+        self.__pitchRollRadius = 50
         DataVisualizer.__init__(self, width, height, 'Inertial Visualizer')
         
-        self.updateHeading(0)
+        self.update(0, 0, 0)
         return
     
     
-    def updateHeading(self, heading):
+    def update(self, heading, pitch, roll):
         """Draw the heading on the compass."""
         self._clearFrame()
         self.__drawBackground()
+        self.__drawHeading(heading)
+        self.__drawPitch(pitch)
+        self.__drawRoll(roll)
+        self._drawFrame()
+        return
+    
+    
+    def __drawHeading(self, heading):
         # Calculate the line from the origin to the perimiter of the circle.
-        angle = (heading + 90) * RAD_PER_DEG
+        angle = (heading + 90) / DEG_PER_RAD
         xOffset = self.width / 2
         yOffset = self.height / 2
         radius = self.__compassRadius
-        x = int(math.sin(angle) * radius + xOffset);
-        y = int(math.cos(angle) * radius + yOffset);
+        x = int(math.sin(angle) * radius + xOffset)
+        y = int(math.cos(angle) * radius + yOffset)
         p1 = (xOffset, yOffset)
         p2 = (x, y)
         self._drawLine(p1, p2, BLUE, 4)
         self._drawCircle(x, y, 7, BLUE, -1)
         # Print the heading:
-        self._drawText(str(round(heading, 2)), (25, 50), 3, WHITE, 1)
-        self._drawFrame()
+        loc = (25, 50)
+        self._drawText(str(round(heading, 2)), loc, 3, WHITE, 1)
         return
-      
-
+    
+    
+    def __drawPitch(self, pitch):
+        angle = (pitch + 90) / DEG_PER_RAD
+        xOffset = self.width / 7
+        yOffset = (self.height / 6) * 5
+        self.__drawDoubleAngle(pitch, angle, xOffset, yOffset, 'P')
+        return
+    
+    
+    def __drawRoll(self, roll):
+        angle = (roll + 90) / DEG_PER_RAD
+        xOffset = (self.width / 7) * 6
+        yOffset = (self.height / 6) * 5
+        self.__drawDoubleAngle(roll, angle, xOffset, yOffset, 'R')
+        return
+    
+    
+    def __drawDoubleAngle(self, deg, rad, xOffset, yOffset, label):
+        radius = self.__pitchRollRadius
+        x = int(math.sin(rad) * radius + xOffset)
+        y = int(math.cos(rad) * radius + yOffset)
+        p1 = (xOffset, yOffset)
+        p2 = (x, y)
+        self._drawLine(p1, p2, BLUE, 4)
+        x = int(math.sin(rad - math.pi) * radius + xOffset)
+        y = int(math.cos(rad - math.pi) * radius + yOffset)
+        p1 = (xOffset, yOffset)
+        p2 = (x, y)
+        self._drawLine(p1, p2, BLUE, 4)
+        loc = (xOffset - 60, yOffset + 70)
+        label = label + ':' + str(round(deg, 2))
+        self._drawText(label, loc, 2, WHITE, 1)
+        return
+    
+    
     def __drawBackground(self):
         """"""
         width = self.width
@@ -158,4 +198,5 @@ class SystemVisualizer(DataVisualizer):
         """Constructor."""
         DataVisualizer.__init__(self, 500, 500, 'System Visualizer')
         return
+
 

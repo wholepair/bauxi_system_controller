@@ -4,14 +4,14 @@ The data processor interprets data received from the IPC manager.
 
 import threading
 from lxml import etree
-import Queue, math
+import Queue
 
 import ipc_manager
+from data_visualizer import DEG_PER_RAD
 
 logger = ipc_manager.logger
-#import plotter
 
-from data_visualizer import InertialVisualizer
+TRUE_STRINGS = [ 'True', 'true', '1', 'yes' ]
 
 class Configuration(object):
     
@@ -166,6 +166,10 @@ class Configuration(object):
         self.__camera = None
         self.__compass = None
         
+        self.__enableIrRangefinders = True
+        self.__enableGPS = True
+        self.__missionFile = ''
+        
         for child in root:
             if type(child) == etree._Comment: continue
             elif child.tag == 'port':
@@ -177,6 +181,12 @@ class Configuration(object):
                 self.__compass = self.Compass(child)
             elif child.tag == 'encoder_counts_per_meter':
                 self.__encoderCountsPerMeter = float(child.text)
+            elif child.tag == 'enable_ir_rangefinders':
+                result = child.text in TRUE_STRINGS
+                self.__enableIrRangefinders = result
+            elif child.tag == 'enable_gps':
+                result = child.text in TRUE_STRINGS
+                self.__enableGPS = result
             elif child.tag == 'mission':
                 self.__missionFile = child.text
         return
@@ -201,6 +211,16 @@ class Configuration(object):
     def encoderCountsPerMeter(self):
         """float."""
         return self.__encoderCountsPerMeter
+    
+    @property
+    def enableIrRangefinders(self):
+        """Boolean."""
+        return self.__enableIrRangefinders
+    
+    @property
+    def enableGPS(self):
+        """Boolean."""
+        return self.__enableGPS
     
     @property
     def missionFile(self):
@@ -365,19 +385,14 @@ class InertialDataProcessor(DataProcessor):
     the data and how to represent it to the mission_planner and visually via 
     some graphical display (data visualization rather than text data display).
     """
-    DRAW_INTERVAL = 100
     
-    #__inertialVisualizer = InertialVisualizer()
-        
+    
     def __init__(self, missionPlanner):
         DataProcessor.__init__(self, False)
         self.__missionPlanner = missionPlanner
         
         self.__declination = self._configuration.compass.declination
         self.__message = None
-        #self.__plotter = plotter.Plotter()
-        #self.__drawCounter = 0
-        # Only call this for the last data processor instantiated. 
         return
     
     
@@ -389,19 +404,18 @@ class InertialDataProcessor(DataProcessor):
         
         self.__message = message
         yaw = 360.0 - message.heading + self.__declination
+        
         if yaw >= 360.0:
             yaw = yaw - 360.0
         elif yaw < 0.0:
             yaw = yaw + 360.0
-        yawRadians = yaw / (180.0 / math.pi)
+        
+        yawRadians = yaw / DEG_PER_RAD
         
         #print yawRadians, yawDegrees
         self._messagesProcessedCount += 1
         self.__missionPlanner.updateInertial(message, yawRadians, yaw)
         logger.debug(message.toString())
-        
-        #self.__inertialVisualizer.updateHeading(yaw)
-        
         return
     
     
@@ -410,6 +424,8 @@ class SpatialDataProcessor(DataProcessor):
     """Convert the counts to distances etc.."""
 
     ID_SPACIAL = 's'
+    
+    IR_DISTANCE_NOMINAL = 55
     
     def __init__(self, missionPlanner):
         DataProcessor.__init__(self, False)
@@ -422,8 +438,15 @@ class SpatialDataProcessor(DataProcessor):
         # Possibly convert all distance sensor measurements to points in R3
         # using sensor pointing information from the configuration file.
         self._messagesProcessedCount += 1
-        self.__missionPlanner.updateSpacial(message)
         logger.debug(message.toString())
+        
+        if not self._configuration.enableIrRangefinders:
+            # Doctor up the message to set IR values to nominal values.
+            message.overrideIrValues(self.IR_DISTANCE_NOMINAL
+                                     , self.IR_DISTANCE_NOMINAL
+                                     , self.IR_DISTANCE_NOMINAL)
+        
+        self.__missionPlanner.updateSpacial(message)
         # Check the outgoing message queue for spacial messages.
         while not self._txQueue.empty():
             # TODO: peek in the queue to see that it is for us...
@@ -431,6 +454,7 @@ class SpatialDataProcessor(DataProcessor):
             if txMessage[0] == self.ID_SPACIAL:
                 #print 'Spacial Data Processor: transmit message:', txMessage
                 message.txCallback(txMessage[2:])
+            
         return
     
     
@@ -456,7 +480,9 @@ class GpsDataProcessor(DataProcessor):
         if lat != self.__missionPlanner.lat or lon != self.__missionPlanner.lon:
             #print '\r%s, %s'%(round(lat, 4), round(lon, 4)),
             #sys.stdout.flush()
-            self.__missionPlanner.updateGps(message, lat, lon)
+            if self._configuration.enableGPS:
+                self.__missionPlanner.updateGps(message, lat, lon)
+            
             self._gpsDataChanged = True
         else:
             self._gpsDataChanged = False

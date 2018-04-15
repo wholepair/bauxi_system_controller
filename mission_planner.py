@@ -19,6 +19,10 @@ import matplotlib.pyplot as plt
 
 import data_processor
 from data_processor import DataProcessor
+from moving_average import ExponentialMovingAverage
+from data_visualizer import InertialVisualizer
+from data_visualizer import DEG_PER_RAD
+
 from static_maps import StaticMap
 
 #from debug_view import Ui_MainWindow
@@ -36,6 +40,7 @@ LOG_LEVEL_NAMES = { LOG_LEVEL_DEBUG    : 'LOG_LEVEL_DEBUG'
                   , LOG_LEVEL_WARNING  : 'LOG_LEVEL_WARNING'
                   , LOG_LEVEL_ERROR    : 'LOG_LEVEL_ERROR' 
                   , LOG_LEVEL_CRITICAL : 'LOG_LEVEL_CRITICAL' }
+
 
 def logPrint(message, printMessage=True, level=LOG_LEVEL_INFO):
     if level == LOG_LEVEL_DEBUG:
@@ -342,6 +347,9 @@ class MissionPlanner(object):
         # How far we have driven in visual search of the target object.
         self.__targetSearchDistance = 0
         
+        self.__emaGpsX = ExponentialMovingAverage(1.0)
+        self.__emaGpsY = ExponentialMovingAverage(1.0)
+        
         self.__utmGps = ()
         self.__utmVector = ()
         
@@ -369,9 +377,11 @@ class MissionPlanner(object):
         # Convert Lat Lon to UTM.
         self.__lat = 0.0 # Everything is in degrees decimal degrees.
         self.__lon = 0.0
-        self.__headingDegrees = 0.0
+        self.__degreesHeading = 0.0
+        self.__degreesPitch = 0.0
+        self.__degreesRoll = 0.0
         self.__headingRadians = 0.0
-        self.__turnAngle = 0.0
+        self.__turnMagnitude = 0.0
         self.__turnDirection = self.TURN_STRAIGHT  # 0 is left, 1 is right.
         self.__motorSpeed = self.SPEED_MIN
 
@@ -739,12 +749,11 @@ class MissionPlanner(object):
             speedLeft = 0
             speedRight = 0
             if self.__turnDirection == self.TURN_LEFT:
-                speedLeft = int(self.__motorSpeed - self.__turnAngle)
+                speedLeft = int(self.__motorSpeed - self.__turnMagnitude)
                 speedRight = int(self.__motorSpeed)
-            
             elif self.__turnDirection == self.TURN_RIGHT:
                 speedLeft = int(self.__motorSpeed)
-                speedRight = int(self.__motorSpeed - self.__turnAngle)
+                speedRight = int(self.__motorSpeed - self.__turnMagnitude)
             elif self.__turnDirection == self.TURN_STRAIGHT \
                 or self.__motorSpeed == self.SPEED_STOP:
                 
@@ -763,6 +772,12 @@ class MissionPlanner(object):
         """
         self.__spacialUpdateCounter += 1
         self.__messageSpacial = message
+        
+        # When the pitch is out of range, ignore the IR rangefinders.
+        if self.__messageInertial is not None:
+            if abs(self.__messageInertial.pitch) > 10.0:
+                self.__messageSpacial.overrideIrValues(55, 55, 55)
+        
         self.__prevEncoderCountsLeft = self.__encoderCountsLeft
         self.__prevEncoderCountsRight = self.__encoderCountsRight
         self.__radioMode = self.__messageSpacial.radioMode
@@ -780,6 +795,7 @@ class MissionPlanner(object):
         elif self.__currentState == self.STATE_NOMINAL \
                 or self.__currentState == self.STATE_IMPAIRED:
             self.__normalOperation()
+        
         return
     
     
@@ -788,12 +804,14 @@ class MissionPlanner(object):
         error, and turning direction.
         """
         self.__messageInertial = message
-        self.__headingDegrees = yawDegrees
+        self.__degreesHeading = yawDegrees
         self.__headingList.append(yawRadians)
+        self.__degreesPitch = message.pitch
+        self.__degreesRoll = message.roll
         
         #print yawDegrees
         if len(self.__headingList) > 5:
-            self.__headingList.remove(self.__headingList[0])
+            self.__headingList.pop(0)
         return
     
     
@@ -805,6 +823,8 @@ class MissionPlanner(object):
         """
         self.__messageGps = message
         # Decompose the message, extract relevant fields, mainly Lat/Lon.
+        # TODO: extract other position estimation confidence fields:
+        # - Dilution of precision, etc..
         self.__lat = lat
         self.__lon = lon
         self.__computeGpsPosition()
@@ -929,7 +949,25 @@ class MissionPlanner(object):
     def __computeGpsPosition(self):
         # Convert lat lon to UTM
         if self.__lat != 0.0:
-            self.__utmGps = utm.from_latlon(self.__lat, self.__lon)
+            gX, gY, zNum, zAlpha = utm.from_latlon(self.__lat, self.__lon)
+            
+            # Filter the GPS data based on whether the robot is moving.
+            if self.__messageInertial is not None:
+                if self.__messageInertial.inMotion:
+                    self.__emaGpsX.setAlpha(0.99)
+                    self.__emaGpsY.setAlpha(0.99)
+                else:
+                    self.__emaGpsX.setAlpha(0.01)
+                    self.__emaGpsY.setAlpha(0.01)
+            else:
+                self.__emaGpsX.setAlpha(0.99)
+                self.__emaGpsY.setAlpha(0.99)
+            
+            self.__emaGpsX.addSample(gX)
+            self.__emaGpsY.addSample(gY)
+            gX = self.__emaGpsX.computeAverage()
+            gY = self.__emaGpsY.computeAverage()
+            self.__utmGps = (gX, gY, zNum, zAlpha)
         return
     
     
@@ -1033,10 +1071,10 @@ class MissionPlanner(object):
         """
         goalX = self.__locations[self.__locationIndex][0][0]
         goalY = self.__locations[self.__locationIndex][0][1]
-        heading = self.__headingDegrees
+        heading = self.__degreesHeading
         # Angle between east and where we are and where we want to be.
         angle = math.atan2(goalY - self.__compositeY, goalX - self.__compositeX)
-        angle *= 180.0 / math.pi # Convert radians to degrees.
+        angle *= DEG_PER_RAD # Convert radians to degrees.
         if angle < 0.0:
             angle += 360.0
         
@@ -1044,9 +1082,9 @@ class MissionPlanner(object):
         # are heading and the direction we want to head.
         turnAngle = abs(heading - angle)
         if turnAngle > 180.0:
-            turnAngle = 360.0 - abs(heading - angle)
+            turnAngle = 360.0 - turnAngle
         
-        self.__turnAngle = turnAngle * self.TURN_RATIO
+        self.__turnMagnitude = turnAngle * self.TURN_RATIO
         self.__crosstrackError = turnAngle
         
         # And determine whether we turn right or left.
@@ -1087,13 +1125,13 @@ class MissionPlanner(object):
                 self.__currentSearchPattern = self.SEARCH_PATTERN_2
                 logPrint('Set search pattern to 2. turn left')
             self.__turnDirection = self.TURN_LEFT
-            self.__turnAngle = 20
+            self.__turnMagnitude = 20
         elif self.__targetSearchDistance < self.DISTANCE_LIMIT_DIVISION * 3:
             if self.__currentSearchPattern != self.SEARCH_PATTERN_3:
                 self.__currentSearchPattern = self.SEARCH_PATTERN_3
                 logPrint('Set search pattern to 3. turn right')
             self.__turnDirection = self.TURN_RIGHT
-            self.__turnAngle = 20
+            self.__turnMagnitude = 20
         else:
             self.__currentSearchPattern = self.SEARCH_PATTERN_NA
             logPrint('Giving up on target, incrementing location index.')
@@ -1120,22 +1158,22 @@ class MissionPlanner(object):
         
         # Such that at 40 cm the cone is ranged across the full field of view
         pixelError = 8000.0 / distanceToTarget
-        self.__turnAngle = abs(self.__targetShapeX - self.CAMERA_HORIZONTAL_CENTER)
+        self.__turnMagnitude = abs(self.__targetShapeX - self.CAMERA_HORIZONTAL_CENTER)
         
-        if self.__turnAngle < pixelError:
+        if self.__turnMagnitude < pixelError:
             self.__distanceToTarget = distanceToTarget
         else:
             # Target is not being ranged. Set to -1 invalid.
             self.__distanceToTarget = -1
         
-        self.__turnAngle *= self.TURN_RATIO_VISION
+        self.__turnMagnitude *= self.TURN_RATIO_VISION
         
         message = 'Moving toward target x: ' + str(self.__targetShapeX) \
             + ', Scale: ' + str(self.__targetScale) \
             + ', Locked: ' + str(self.__targetShapeLocked) \
             + ', Distance: ' + str(self.__distanceToTarget) \
             + ', Direction: ' + self.TURN_DIRECTION_NAMES[self.__turnDirection] \
-            + ', Angle: ' + str(self.__turnAngle)
+            + ', Magnitude: ' + str(self.__turnMagnitude)
         
         logPrint(message)
         return
@@ -1239,7 +1277,7 @@ class MissionPlanner(object):
         print '*********************'
         print 'Turn Direction: ', self.TURN_DIRECTION_NAMES[self.__turnDirection]
         print 'Crosstrack Error: ', self.__crosstrackError
-        print 'Turn Magnitude: ', self.__turnAngle
+        print 'Turn Magnitude: ', self.__turnMagnitude
         print 'Speed:  ', self.__motorSpeed
         print 'Distance to waypoint:', self.__distanceToLocation
         print 'Composite X:', self.__compositeX
@@ -1402,6 +1440,18 @@ def pd(period=0):
     while True:
         mp.printDebug()
         mp.plotMissionCoordinates() # also update the graph, why not.
+        if period == 0: break
+        time.sleep(period) # Sleep in seconds.
+    return
+
+def si(period=0.1):
+    # Period in seconds.
+    iv = InertialVisualizer()
+    while True:
+        iv.update(mp.messageInertial.heading
+                  , mp.messageInertial.pitch
+                  , mp.messageInertial.roll)
+        
         if period == 0: break
         time.sleep(period) # Sleep in seconds.
     return

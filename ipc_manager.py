@@ -498,6 +498,11 @@ class SpacialMessage(Message):
         return
     
     
+    def overrideIrValues(self, left, right, back):
+        self.__irLeft = left
+        self.__irRight = right
+        self.__irBack = back
+    
     def toString(self):
         """Turn the spacial message into a string."""
         c = ','
