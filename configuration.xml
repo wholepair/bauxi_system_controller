@@ -16,7 +16,11 @@
     </port>
     <!-- Encoder configuration section. Counts per meter: -->
     <encoder_counts_per_meter>2858</encoder_counts_per_meter>
-    
+    <!-- Enable the use of IR range-finders: -->
+    <enable_ir_rangefinders>True</enable_ir_rangefinders>
+    <!-- Enable the use of the GPS module for position estimation: -->
+    <enable_gps>True</enable_gps>
+
     <!-- Cammera configuration section -->
     <camera>
         <!-- Cammera device name: -->
