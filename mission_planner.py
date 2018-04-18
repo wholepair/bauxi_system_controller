@@ -22,6 +22,7 @@ from data_processor import DataProcessor
 from moving_average import ExponentialMovingAverage
 from data_visualizer import InertialVisualizer
 from data_visualizer import DEG_PER_RAD
+from kalman_filter import KalmanFilterXY
 
 from static_maps import StaticMap
 
@@ -304,7 +305,7 @@ class MissionPlanner(object):
     
     # Thresholds for slowing down because of obstacles.
     DIST_THRESH_CLEAR_SONAR_SIDE = 120
-    DIST_THRESH_CLEAR_SONAR_FRONT = 150
+    DIST_THRESH_CLEAR_SONAR_FRONT = 140
     DIST_THRESH_CLEAR_IR_MIN = 45
     DIST_THRESH_CLEAR_IR_MAX = 65
     DIST_THRESHOLDS_CLEAR = ( DIST_THRESH_CLEAR_SONAR_SIDE
@@ -329,6 +330,7 @@ class MissionPlanner(object):
         self.__shutdownRequested = False
         self.__shutdownCountdown = 5
         self.__autoAvoidCountdown = self.AUTO_AVOID_DEBOUNCE_COUNT
+        self.__allClear = False
         
         # The distance to the next/current location in the location list.
         self.__distanceToLocation = sys.maxint
@@ -411,6 +413,10 @@ class MissionPlanner(object):
         logPrint('Current Location: ' + repr(self.__locations[0]))
         self.__setVectorPositionToPrevLocation()
         self.__autoAvoidTimer = TimeoutTimer()
+        
+        easting = self.__locations[0][0][0]
+        northing = self.__locations[0][0][1]
+        self.__kalman = KalmanFilterXY(easting, northing)
         
         # Show the mission coordinates in a matplotlib scatter plot
         plt.ion()
@@ -570,8 +576,8 @@ class MissionPlanner(object):
     
     
     def __noObstaclesDetected(self):
-        """Determine if we can drive more quickly due to no perceived obstacles"""
-        allClear = False
+        """Determine if we can drive more quickly due to no perceived obstacles
+        """
         
         leftClear = self.__messageSpacial.irLeft < self.DIST_THRESH_CLEAR_IR_MAX \
             and self.__messageSpacial.irLeft > self.DIST_THRESH_CLEAR_IR_MIN \
@@ -586,10 +592,15 @@ class MissionPlanner(object):
             and self.__messageSpacial.sonarRight > self.DIST_THRESH_CLEAR_SONAR_SIDE \
             and leftClear and rightClear:
             
-            logPrint('No obstacles detected:', False, LOG_LEVEL_DEBUG)
-            self.__printRangefinderDistances(self.DIST_THRESHOLDS_CLEAR
-                                             , False, LOG_LEVEL_DEBUG)
+            if not self.__allClear:
+                logPrint('No obstacles detected:')
+                self.__printRangefinderDistances(self.DIST_THRESHOLDS_CLEAR)
+            
             allClear = True
+            self.__allClear = True
+        else:
+            allClear = False
+            self.__allClear = False
         
         return allClear
     
@@ -968,6 +979,7 @@ class MissionPlanner(object):
             gX = self.__emaGpsX.computeAverage()
             gY = self.__emaGpsY.computeAverage()
             self.__utmGps = (gX, gY, zNum, zAlpha)
+        
         return
     
     
@@ -1035,6 +1047,11 @@ class MissionPlanner(object):
         cX = (gX * gpsWeight + vX * vectorWeight) / (gpsWeight + vectorWeight)
         cY = (gY * gpsWeight + vY * vectorWeight) / (gpsWeight + vectorWeight)
         self.__positionConfidence = gpsWeight + vectorWeight
+        
+        result = self.__kalman.update_predict(cX, cY)
+        cX = result[0][0]
+        cY = result[1][0]
+        
         self.__compositeX = cX
         self.__compositeY = cY
         return (cX, cY)
@@ -1346,6 +1363,10 @@ class MissionPlanner(object):
     def messageVision(self):
         return self.__messageVision
     
+    @property
+    def degreesHeading(self):
+        return self.__degreesHeading
+    
     
 
 ###############################################################################
@@ -1448,7 +1469,7 @@ def si(period=0.1):
     # Period in seconds.
     iv = InertialVisualizer()
     while True:
-        iv.update(mp.messageInertial.heading
+        iv.update(mp.degreesHeading
                   , mp.messageInertial.pitch
                   , mp.messageInertial.roll)
         
