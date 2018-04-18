@@ -274,7 +274,7 @@ class DataProcessor(object):
             self._txQueue = Queue.Queue()
             self._messagesProcessedCount = 0;
             return
-            
+        
         logger.info("Starting IPC managers.")
         # TODO: initialize the camera manager, and get the configurations
         # from the configuration XML file.
@@ -282,7 +282,7 @@ class DataProcessor(object):
             portName = port.name
             baudRate = port.rate
             self.__ipcManagers.append(ipc_manager.IpcManager(portName, baudRate))
-            
+        
         # Setup the camera IPC manager.
         cameraName = self._configuration.camera.name
         filterProperties = self._configuration.camera.filterProperties
@@ -399,9 +399,6 @@ class InertialDataProcessor(DataProcessor):
     def processMessage(self, message):
         # Dispatch message to the relevant class's processor:
         
-        #print '\r%s'%round(message.heading, 4),
-        #sys.stdout.flush()
-        
         self.__message = message
         yaw = 360.0 - message.heading + self.__declination
         
@@ -468,8 +465,20 @@ class GpsDataProcessor(DataProcessor):
     
     
     def processMessage(self, message):
-        # Process GPS messages. Compute northing and easting from lat/lon.
-        """"""
+        """Process GPS messages.
+        """
+        if message.fields.Id == ipc_manager.GpsMessage.GPS_GGA \
+                or message.fields.Id == ipc_manager.GpsMessage.GN_GGA:
+            
+            self.__processGgaMessage(message)
+        
+        logger.debug(message.toString())
+        return
+    
+    
+    def __processGgaMessage(self, message):
+        """Process GGA messages. Compute northing and easting from lat/lon.
+        """
         lat = convertDegMinToDeg(message.fields.latDegrees
                 , message.fields.latMinutes, message.fields.nS)
         
@@ -478,8 +487,6 @@ class GpsDataProcessor(DataProcessor):
         
         self._messagesProcessedCount += 1
         if lat != self.__missionPlanner.lat or lon != self.__missionPlanner.lon:
-            #print '\r%s, %s'%(round(lat, 4), round(lon, 4)),
-            #sys.stdout.flush()
             if self._configuration.enableGPS:
                 self.__missionPlanner.updateGps(message, lat, lon)
             
@@ -487,12 +494,9 @@ class GpsDataProcessor(DataProcessor):
         else:
             self._gpsDataChanged = False
         
-        # TODO: convert lat/lon to easting and northing (x, y) coordinates
-        # in meters.
-        logger.debug(message.toString())
         return
     
-
+    
 
 class CameraDataProcessor(DataProcessor):
     """ Camera data processor class.
