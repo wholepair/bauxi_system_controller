@@ -112,7 +112,14 @@ class GpsMessage(Message):
     GSA - GNSS DOP and active satellites
     GSV - GNSS satelites in view
     RMC - Recommended minimum specific GNSS data
+    
     VTG - Course over ground and ground speed
+    Name            | Example       | Units | Description
+    --------------------------------------------------------------------
+    Message ID:     | $GPVTG        |         | VTG protocol header
+    Course:         | 165.48        | degrees | Measured heading
+    Reference       | T             |         | True
+    
     """
     
     GPS_GGA = 'GPGGA'
@@ -121,49 +128,48 @@ class GpsMessage(Message):
     GPS_RMC = 'GPRMC'
     GPS_VTG = 'GPVTG'
     
+    GN_GGA = 'GNGGA'
+    GN_VTG = 'GNVTG'
+    
     class GgaData(object):
         """Initialize a GGA message."""
         
         def __init__(self, data):
             """Constructor"""
-            # Name            | Example       | Units | Description
-            # ------------------------------------------------------------------
-            # Message ID:     | $GPGGA        |       | GGA protocol header
-            self.__Id   = data[0]
-            # UTC Time:       | 053740.000    |       | hhmmss.sss
-            self.__utc  = data[1]
+            self.__Id = data[0]
+            self.__utc = data[1]
             self.__utcHours = int(self.__utc[:2])
             self.__utcMinutes = int(self.__utc[2:4])
             self.__utcSeconds = float(self.__utc[4:])
-            # Latitude        | 2503.6319     |       | ddmm.mmmm
             self.__lat  = data[2]
             dddmm, mmm = self.__lat.split('.')
             self.__latDegrees = int(dddmm[:-2])
             self.__latMinutes = float(dddmm[-2:] + '.' + mmm)
-            # N/S indicator   | N             |       | N=north or S=south
-            self.__nS   = data[3]
-            # Longitude       | 12136.0099    |       | dddmm.mmmm
-            self.__lon  = data[4]
+            self.__nS = data[3]
+            self.__lon = data[4]
             dddmm, mmm = self.__lon.split('.')
             self.__lonDegrees = int(dddmm[:-2])
             self.__lonMinutes = float(dddmm[-2:] + '.' + mmm)
-            # E/W Indicator   | E             |       | E=east or W=west
-            self.__eW   = data[5]
-            # Position Fix    | 1             |       | See Table 5.1-3
-            self.__fix  = int(data[6])
-            # Satellites Used | 08            |       | Range 0 to 12
-            self.__sat  = int(data[7])
-            # HDOP            | 1.1           |       | Horizontal Dilution of Precision
+            self.__eW = data[5]
+            self.__fix = int(data[6])
+            self.__sat = int(data[7])
             self.__hdop = float(data[8])
-            # MSL Altitude    | 63.8          | meters| 
-            self.__alt  = float(data[9])
-            # Geoid Separation| 15.2          | meters|
-            self.__sep  = float(data[11])
-            # Age of Diff. Corr. |            | second| Null fields when DGPS is not used
-            self.__age  = data[13]
-            # Checksum        | *64           |       |
-            self.__ref  = data[14]
+            self.__alt = float(data[9])
+            self.__sep = float(data[11])
+            self.__age = data[13]
+            self.__ref = data[14]
             return
+        
+        
+        def toString(self):
+            """"""
+            c = ','
+            iString = self.__Id + c + self.__utc + c + self.__lat + c \
+                + self.__nS + c + self.__lon + c + self.__eW + c \
+                + str(self.__fix) + c + str(self.__sat) + c \
+                + str(self.__hdop) + c + str(self.__alt) + c + str(self.__sep)
+            
+            return iString
         
         
         @property
@@ -249,7 +255,41 @@ class GpsMessage(Message):
         
         
     
-    __messageTable = { GPS_GGA : GgaData } # Add entries for new GPS messages.
+    class VtgData(object):
+        """Initialize a VTG message."""
+        
+        def __init__(self, data):
+            """Constructor"""
+            self.__Id = data[0]
+            self.__course = float(data[1])
+            return
+        
+        
+        def toString(self):
+            """"""
+            c = ','
+            iString = self.__Id + c + str(self.__course)
+            
+            return iString
+        
+        
+        @property
+        def Id(self):
+            """GPS message ID."""
+            return self.__Id
+        
+        @property
+        def course(self):
+            return self.__course
+        
+        
+    
+    # Add entries for new GPS messages.
+    __messageTable = { GPS_GGA: GgaData
+                      , GN_GGA: GgaData
+                      , GPS_VTG: VtgData
+                      , GN_VTG: VtgData
+                      }
     
     ID_GPS = 'g'
     
@@ -263,7 +303,6 @@ class GpsMessage(Message):
             Message.__init__(self, self.ID_GPS, txCallback)
             try:
                 self.__fields = message(data)
-                self.toString()
             except Exception, e:
                 self.__fields = None
                 logger.warning('GPS parse error: ' + str(e))
@@ -271,6 +310,7 @@ class GpsMessage(Message):
             # We dont decode this NMEA string yet...
             Message.__init__(self, None, None)
             self.__fields = -1
+        
         self._valid = self.__fields is not None
         return
     
@@ -278,13 +318,9 @@ class GpsMessage(Message):
     def toString(self):
         """Turn the message into its string representation."""
         c = ','
-        iString = c + self.ID_GPS + c + str(self.__fields.Id) + c \
-            + str(self.__fields.utc) + c + str(self.__fields.lat) + c \
-            + str(self.__fields.nS) + c + str(self.__fields.lon) + c \
-            + str(self.__fields.eW) + c + str(self.__fields.fix) + c \
-            + str(self.__fields.sat) + c + str(self.__fields.hdop) + c \
-            + str(self.__fields.alt) + c + str(self.__fields.sep) + c \
+        iString = c + self.ID_GPS + c + self.__fields.toString() + c \
             + str(self._creationTime) + c + str(self._creationTick)
+        
         return iString
     
     
@@ -707,6 +743,7 @@ class IpcManager(object):
     
     __messageQueue = Queue.Queue()
     
+    
     def __init__(self, port, configuration):
         # Open the designated communications channel:
         # Optionally instantiate a camera...
@@ -720,11 +757,13 @@ class IpcManager(object):
                     logger.critical(message)
                     print message
                     return
+                
             except Exception, e:
                 message = "Can't open port: " + str(e), '. Aborting thread.'
                 logger.critical(message)
                 print message
                 return
+            
         else:
             self.__channel = cameras.CameraWrapper(port, configuration)
         # Add some identifying information from the init parameters.
@@ -733,6 +772,7 @@ class IpcManager(object):
         if self.__channel.isOpen():
             # Only start the reader thread if the port is open.
             t.start()
+        
         return
     
     
@@ -753,6 +793,7 @@ class IpcManager(object):
             if len(data) == 0:
                 logger.info('Read timeout')
                 continue
+            
             # Get the message constructor based on the message type.
             callback = self.__callbackTable.get(data[0], None)
             if callback is not None:
@@ -761,12 +802,14 @@ class IpcManager(object):
                 except Exception, e:
                     print e
                     continue
+                
                 if instance.valid:
                     self.__messageQueue.put(instance)
                 else:
                     message = 'Received invalid message: ' + repr(data)
                     logger.info(message)
                     print message
+                
             else:
                 if not repr(data).startswith("'Received command:"):
                     message = 'Received unknown message: ' + repr(data)
@@ -797,6 +840,7 @@ class IpcManager(object):
             return self.__messageQueue.get(True, 10)
         except Exception, e:
             print e
+        
         return
     
             
@@ -808,6 +852,7 @@ class IpcManager(object):
             self.__channel.write(data)
         except Exception, e:
             print e
+        
         return
     
     
