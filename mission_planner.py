@@ -240,11 +240,11 @@ class MissionPlanner(object):
                            , TURN_STRAIGHT : 'TURN_STRAIGHT'
                            }
     
-    SPEED_MAX = 255
-    SPEED_FAST = 160
-    SPEED_MED = 150
-    SPEED_MIN = 140
     SPEED_STOP = 128
+    SPEED_MIN = SPEED_STOP + 12
+    SPEED_MED = SPEED_STOP + 22
+    SPEED_FAST = SPEED_STOP + 32
+    SPEED_MAX = SPEED_STOP + 52
     
     # TODO: tune these ratios
     TURN_RATIO = float(2 * (SPEED_MED - SPEED_STOP)) / 180.0
@@ -253,8 +253,6 @@ class MissionPlanner(object):
     CAMERA_HORIZONTAL_CENTER = CAMERA_HORIZONTAL_RESOLUTION / 2.0
     # TODO: get the horizontal resolution from the camera implementation.
     TURN_RATIO_VISION = float(2 * (SPEED_MED - SPEED_STOP)) / CAMERA_HORIZONTAL_CENTER
-    
-    SPEED_UPDATE_INTERVAL = 1 # Frequency of speed feedback to motor controller.
     
     LOCATION_TYPE_START = 'start'
     LOCATION_TYPE_WAYPOINT = 'waypoint'
@@ -281,10 +279,10 @@ class MissionPlanner(object):
     TARGET_SEARCH_DISTANCE_LIMIT = 20.0 # Meters.
     DISTANCE_LIMIT_DIVISION = TARGET_SEARCH_DISTANCE_LIMIT / 3.0
     TARGET_SCALE_THRESH = 2000.0
-    AUTO_AVOID_DEBOUNCE_COUNT = 3
+    AUTO_AVOID_DEBOUNCE_COUNT = 4
     
     # Thresholds for obstacle avoidance
-    DIST_THRESH_AVOID_SONAR_SIDE = 86
+    DIST_THRESH_AVOID_SONAR_SIDE = 80
     DIST_THRESH_AVOID_SONAR_FRONT = 100
     DIST_THRESH_AVOID_IR_MIN = 25
     DIST_THRESH_AVOID_IR_MAX = 85
@@ -304,8 +302,8 @@ class MissionPlanner(object):
                              , DIST_THRESH_SLOW_IR_MAX )
     
     # Thresholds for slowing down because of obstacles.
-    DIST_THRESH_CLEAR_SONAR_SIDE = 120
-    DIST_THRESH_CLEAR_SONAR_FRONT = 140
+    DIST_THRESH_CLEAR_SONAR_SIDE = 110
+    DIST_THRESH_CLEAR_SONAR_FRONT = 130
     DIST_THRESH_CLEAR_IR_MIN = 45
     DIST_THRESH_CLEAR_IR_MAX = 65
     DIST_THRESHOLDS_CLEAR = ( DIST_THRESH_CLEAR_SONAR_SIDE
@@ -344,7 +342,6 @@ class MissionPlanner(object):
         # The distance to the target, measured by the range sensor
         self.__distanceToTarget = -1.0
         self.__failedStateCounter = 0
-        self.__spacialUpdateCounter = 0
         
         # How far we have driven in visual search of the target object.
         self.__targetSearchDistance = 0
@@ -530,7 +527,7 @@ class MissionPlanner(object):
             or self.__messageSpacial.sonarRight < self.DIST_THRESH_AVOID_SONAR_SIDE \
             or leftBlocked or rightBlocked:
             
-            self.__autoAvoidCountdown -= 1
+            self.__autoAvoidCountdown -= 2 # Countdown twice as quickly as up.
             self.__printRangefinderDistances(self.DIST_THRESHOLDS_OBSTACLE)
             if self.__autoAvoidCountdown <= 0:
                 # Because of the debouncing here, this will only print once until
@@ -548,6 +545,7 @@ class MissionPlanner(object):
                 self.__turnDirection = self.TURN_STRAIGHT
         else:
             if self.__autoAvoidCountdown < self.AUTO_AVOID_DEBOUNCE_COUNT:
+                # Count back up half as quickly as we count down.
                 self.__autoAvoidCountdown += 1
         
         return autoAvoidNeeded
@@ -742,6 +740,7 @@ class MissionPlanner(object):
             else:
                 if self.__autoAvoidTimer.checkTimeout() < 0:
                     self.setRunMode(self.MODE_TARGET_SEARCH)
+                
                 self.__searchForTarget()
         
         if (self.currentMode == self.MODE_WAYPOINT_SEARCH \
@@ -756,24 +755,34 @@ class MissionPlanner(object):
             # Revert to mission planner control after a timeout.
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
         
-        if self.__spacialUpdateCounter % self.SPEED_UPDATE_INTERVAL == 0:
-            speedLeft = 0
-            speedRight = 0
-            if self.__turnDirection == self.TURN_LEFT:
+        # Set the motor speeds differently based on our mode: drive more slowly
+        # in target tracking mode, subtract the turn magnitude from the side
+        # we want to turn toward.
+        speedLeft = 0
+        speedRight = 0
+        if self.__turnDirection == self.TURN_LEFT:
+            if self.currentMode == self.MODE_TARGET_TRACKING:
                 speedLeft = int(self.__motorSpeed - self.__turnMagnitude)
                 speedRight = int(self.__motorSpeed)
-            elif self.__turnDirection == self.TURN_RIGHT:
+            else:
+                speedLeft = int(self.__motorSpeed)
+                speedRight = int(self.__motorSpeed + self.__turnMagnitude)
+        elif self.__turnDirection == self.TURN_RIGHT:
+            if self.currentMode == self.MODE_TARGET_TRACKING:
                 speedLeft = int(self.__motorSpeed)
                 speedRight = int(self.__motorSpeed - self.__turnMagnitude)
-            elif self.__turnDirection == self.TURN_STRAIGHT \
-                or self.__motorSpeed == self.SPEED_STOP:
-                
-                speedLeft = int(self.__motorSpeed)
+            else:
+                speedLeft = int(self.__motorSpeed + self.__turnMagnitude)
                 speedRight = int(self.__motorSpeed)
+        elif self.__turnDirection == self.TURN_STRAIGHT \
+            or self.__motorSpeed == self.SPEED_STOP:
             
-            #print speedLeft, speedRight
-            # Set the speed of the right and left motor's
-            self.setMotorSpeed(speedLeft, speedRight)
+            speedLeft = int(self.__motorSpeed)
+            speedRight = int(self.__motorSpeed)
+        
+        #print speedLeft, speedRight
+        # Set the speed of the right and left motor's
+        self.setMotorSpeed(speedLeft, speedRight)
         
         return
     
@@ -781,7 +790,6 @@ class MissionPlanner(object):
     def updateSpacial(self, message):
         """All robot control is driven by spacial update message events.
         """
-        self.__spacialUpdateCounter += 1
         self.__messageSpacial = message
         
         # When the pitch is out of range, ignore the IR rangefinders.
