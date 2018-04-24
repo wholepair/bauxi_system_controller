@@ -265,9 +265,9 @@ class MissionPlanner(object):
     
     # Search patterns
     SEARCH_PATTERN_NA = -1
-    SEARCH_PATTERN_1 = 0
-    SEARCH_PATTERN_2 = 1
-    SEARCH_PATTERN_3 = 2
+    SEARCH_PATTERN_1 = 0 # Keep moving toward where we think the target is located.
+    SEARCH_PATTERN_2 = 1 # Turn left in a circle.
+    SEARCH_PATTERN_3 = 2 # Turn right in a circle.
     
     SEARCH_PATTERN_NAMES = { SEARCH_PATTERN_NA : "SEARCH_PATTERN_NA"
                            , SEARCH_PATTERN_1  : 'SEARCH_PATTERN_1'
@@ -276,8 +276,7 @@ class MissionPlanner(object):
                            }
     
     __currentSearchPattern = SEARCH_PATTERN_NA
-    TARGET_SEARCH_DISTANCE_LIMIT = 20.0 # Meters.
-    DISTANCE_LIMIT_DIVISION = TARGET_SEARCH_DISTANCE_LIMIT / 3.0
+    TARGET_SEARCH_DISTANCE = 7.0 # Meters.
     TARGET_SCALE_THRESH = 2000.0
     AUTO_AVOID_DEBOUNCE_COUNT = 4
     
@@ -614,6 +613,7 @@ class MissionPlanner(object):
             return self.__locations[self.__locationIndex][1]
         else:
             return self.__locations[self.__locationIndex-1][1]
+        
         return
     
     
@@ -627,6 +627,7 @@ class MissionPlanner(object):
         self.__prevEncoderCountsLeft = self.__encoderCountsLeft
         self.__prevEncoderCountsRight = self.__encoderCountsRight
         self.__failedStateCounter += 1
+        
         if self.__failedStateCounter > self.FAILED_STATE_COUNT_LIMIT:
             self.__currentState = self.STATE_FAILED
             logger.error('Failed state counter exceeded failed state count limit')
@@ -636,6 +637,7 @@ class MissionPlanner(object):
             logPrint('GPS System: ' + repr(self.__messageGps))
             logPrint('Vision System: ' + repr(self.__messageVision))
             self.shutdown()
+        
         if self.__messageInertial is not None \
             and self.__messageVision is not None:
             
@@ -647,19 +649,23 @@ class MissionPlanner(object):
             else:
                 self.__currentState = self.STATE_NOMINAL
                 logPrint('Setting current state to: STATE_NOMINAL.')
+            
             # Set the operating mode.
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
             logPrint('Setting current mode to: MODE_WAYPOINT_SEARCH.')
+        
         return
     
     
     def __checkShutdown(self):
+        """If a shutdown has been requested, proceed with shutting down."""
         if self.__shutdownRequested:
             self.__shutdownCountdown -= 1
             self.setRunMode(self.MODE_HALT)
             if self.__shutdownCountdown <= 0:
                 self.__currentState = self.STATE_SHUTDOWN
                 self.__dataProcessor.shutdown()
+            
         return
     
     
@@ -705,7 +711,6 @@ class MissionPlanner(object):
             
             logPrint('Reached waypoint, index: ' + str(self.__locationIndex))
             self.__locationIndex += 1
-            
         elif currentLocationType == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
             
@@ -720,6 +725,7 @@ class MissionPlanner(object):
                 
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
+                
                 if self.__distanceToTarget > 0 and self.__distanceToTarget < 80:
                     # 80 CM as ranged by the center sonar rangefinder
                     logPrint('Ranging target: approaching target at slow speed.')
@@ -736,7 +742,6 @@ class MissionPlanner(object):
                     self.__setVectorPositionToPrevLocation()
                     self.setRunMode(self.MODE_WAYPOINT_SEARCH)
                     self.__currentSearchPattern = self.SEARCH_PATTERN_NA
-                
             else:
                 if self.__autoAvoidTimer.checkTimeout() < 0:
                     self.setRunMode(self.MODE_TARGET_SEARCH)
@@ -757,9 +762,10 @@ class MissionPlanner(object):
         
         # Set the motor speeds differently based on our mode: drive more slowly
         # in target tracking mode, subtract the turn magnitude from the side
-        # we want to turn toward.
+        # we want to turn toward. Otherwise add the speed to the opposite side.
         speedLeft = 0
         speedRight = 0
+        
         if self.__turnDirection == self.TURN_LEFT:
             if self.currentMode == self.MODE_TARGET_TRACKING:
                 speedLeft = int(self.__motorSpeed - self.__turnMagnitude)
@@ -831,6 +837,7 @@ class MissionPlanner(object):
         #print yawDegrees
         if len(self.__headingList) > 5:
             self.__headingList.pop(0)
+        
         return
     
     
@@ -893,6 +900,7 @@ class MissionPlanner(object):
             self.setRunMode(self.MODE_HALT)
             self.setMotorSpeed(self.SPEED_STOP, self.SPEED_STOP)
             self.__dataProcessor.shutdown()
+        
         self.__shutdownRequested = True
         return
     
@@ -939,6 +947,7 @@ class MissionPlanner(object):
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
         else:
             self.__setRunModeSpacial(self.SPACIAL_MODE_SYS_CONTROL)
+        
         return
     
     
@@ -949,6 +958,7 @@ class MissionPlanner(object):
             logPrint('Setting spacial controller mode: ' + self.SPACIAL_MODE_NAMES[mode])
             self.__dataProcessor.sendMessage('s:m:' + str(mode) + ';')
             self.__currentSpacialMode = mode
+        
         return
     
     
@@ -966,7 +976,7 @@ class MissionPlanner(object):
     
     
     def __computeGpsPosition(self):
-        # Convert lat lon to UTM
+        """Convert lat lon to UTM"""
         if self.__lat != 0.0:
             gX, gY, zNum, zAlpha = utm.from_latlon(self.__lat, self.__lon)
             
@@ -1050,6 +1060,7 @@ class MissionPlanner(object):
         if gpsValid:
             # Weigh the GPS position based on the number of satelites in view.
             gpsWeight = float(self.__messageGps.fields.sat)
+        
         # Weigh the vector position by the nearness to the last known target.
         vectorWeight = 100.0 / (self.__distanceFromLastTarget + 1)
         cX = (gX * gpsWeight + vX * vectorWeight) / (gpsWeight + vectorWeight)
@@ -1126,6 +1137,7 @@ class MissionPlanner(object):
                 self.__turnDirection = self.TURN_LEFT
         else:
             self.__turnDirection = self.TURN_STRAIGHT
+        
         return
     
     
@@ -1139,31 +1151,35 @@ class MissionPlanner(object):
                  + str(self.__targetSearchDistance) + ', current search pattern: '
                  + str(self.__currentSearchPattern), LOG_LEVEL_DEBUG)
         
-        if self.__targetSearchDistance < self.DISTANCE_LIMIT_DIVISION:
+        if self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE:
             if self.__currentSearchPattern != self.SEARCH_PATTERN_1:
                 self.__currentSearchPattern = self.SEARCH_PATTERN_1
                 logPrint('Set search pattern to 1. Keep going to cone')
+            
             # Keep going toward where we think the cone is. The turn direction 
             # and magnitude are set previously in compute turn direction
-        elif self.__targetSearchDistance < self.DISTANCE_LIMIT_DIVISION * 2:
+        elif self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE * 2:
             if self.__currentSearchPattern != self.SEARCH_PATTERN_2:
                 self.__currentSearchPattern = self.SEARCH_PATTERN_2
                 logPrint('Set search pattern to 2. turn left')
+            
             self.__turnDirection = self.TURN_LEFT
-            self.__turnMagnitude = 20
-        elif self.__targetSearchDistance < self.DISTANCE_LIMIT_DIVISION * 3:
+            self.__turnMagnitude = 20.0
+        elif self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE * 3:
             if self.__currentSearchPattern != self.SEARCH_PATTERN_3:
                 self.__currentSearchPattern = self.SEARCH_PATTERN_3
                 logPrint('Set search pattern to 3. turn right')
+            
             self.__turnDirection = self.TURN_RIGHT
-            self.__turnMagnitude = 20
+            self.__turnMagnitude = 20.0
         else:
             self.__currentSearchPattern = self.SEARCH_PATTERN_NA
             logPrint('Giving up on target, incrementing location index.')
             self.__locationIndex += 1
-            self.__targetSearchDistance = 0
+            self.__targetSearchDistance = 0.0
             self.__targetShapeLocked = False
             self.setRunMode(self.MODE_WAYPOINT_SEARCH)
+        
         return
     
     
@@ -1172,12 +1188,15 @@ class MissionPlanner(object):
         If we are close enough, go really slow, we also decide if have 
         made contact with the target here, basically, when there is a 
         minimum distance to the target."""
+        
         distanceToTarget = self.__messageSpacial.sonarFront
         # basically, we center the target in the image.
         if self.__targetShapeX < self.CAMERA_HORIZONTAL_CENTER:
             self.__turnDirection = self.TURN_LEFT
+            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE
         elif self.__targetShapeX > self.CAMERA_HORIZONTAL_CENTER:
             self.__turnDirection = self.TURN_RIGHT
+            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE * 2
         else:
             self.__turnDirection = self.TURN_STRAIGHT
         
