@@ -16,6 +16,7 @@ import sys, math, time
 from lxml import etree
 import utm
 import matplotlib.pyplot as plt
+from static_maps import StaticMap
 
 import data_processor
 from data_processor import DataProcessor
@@ -23,8 +24,6 @@ from moving_average import ExponentialMovingAverage
 from data_visualizer import InertialVisualizer
 from data_visualizer import DEG_PER_RAD
 from kalman_filter import KalmanFilterXY
-
-from static_maps import StaticMap
 
 #from debug_view import Ui_MainWindow
 
@@ -57,6 +56,7 @@ def logPrint(message, printMessage=True, level=LOG_LEVEL_INFO):
     
     if printMessage:
         print LOG_LEVEL_NAMES[level] + ':\t' + message
+    
     return
 
 
@@ -66,8 +66,9 @@ class TimeoutTimer(object):
         """Initialize the duration field. Duration is in tens of seconds, 
         floating point"""
         self.resetTimeout(duration)
+        return
     
-        
+    
     def checkTimeout(self):
         """Return the number of of seconds until timeout.
         If the duration has not been elapsed, return a positive number, 
@@ -81,7 +82,9 @@ class TimeoutTimer(object):
         self.__startTime = time.clock() # Time since start of program.
         self.__timeout = self.__startTime + duration
         self.__duration = duration
-        
+        return
+    
+    
 
 class MissionLocations(object):
     """Things to remember:
@@ -228,8 +231,8 @@ class MissionPlanner(object):
                        , RADIO_MODE_MOTION_ENABLED_REMOTE : 'RADIO_MODE_MOTION_ENABLED_REMOTE'
                          }
     
-    THRESHOLD_TARGET_DISTANCE = 4 # Meters to target before we look for it...
-    THRESHOLD_WAYPOINT_DISTANCE = 2 # Meters to location before we go to the next one.
+    THRESHOLD_TARGET_DISTANCE = 6.0 # Meters to target before we look for it...
+    THRESHOLD_WAYPOINT_DISTANCE = 3.0 # Meters to location before we go to the next one.
     
     TURN_LEFT = 0
     TURN_RIGHT = 1
@@ -241,10 +244,10 @@ class MissionPlanner(object):
                            }
     
     SPEED_STOP = 128
-    SPEED_MIN = SPEED_STOP + 12
-    SPEED_MED = SPEED_STOP + 22
-    SPEED_FAST = SPEED_STOP + 32
-    SPEED_MAX = SPEED_STOP + 52
+    SPEED_MIN = SPEED_STOP + 10
+    SPEED_MED = SPEED_STOP + 20
+    SPEED_FAST = SPEED_STOP + 30
+    SPEED_MAX = SPEED_STOP + 40
     
     # TODO: tune these ratios
     TURN_RATIO = float(2 * (SPEED_MED - SPEED_STOP)) / 180.0
@@ -264,19 +267,19 @@ class MissionPlanner(object):
     FAILED_STATE_COUNT_LIMIT = 100
     
     # Search patterns
-    SEARCH_PATTERN_NA = -1
-    SEARCH_PATTERN_1 = 0 # Keep moving toward where we think the target is located.
-    SEARCH_PATTERN_2 = 1 # Turn left in a circle.
-    SEARCH_PATTERN_3 = 2 # Turn right in a circle.
+    SEARCH_PATTERN_NONE = -1
+    SEARCH_PATTERN_NAVIGATE = 0 # Keep moving toward where we think the target is located.
+    SEARCH_PATTERN_LEFT = 1 # Turn left in a circle.
+    SEARCH_PATTERN_RIGHT = 2 # Turn right in a circle.
     
-    SEARCH_PATTERN_NAMES = { SEARCH_PATTERN_NA : "SEARCH_PATTERN_NA"
-                           , SEARCH_PATTERN_1  : 'SEARCH_PATTERN_1'
-                           , SEARCH_PATTERN_2  : 'SEARCH_PATTERN_2'
-                           , SEARCH_PATTERN_3  : 'SEARCH_PATTERN_3'
+    SEARCH_PATTERN_NAMES = { SEARCH_PATTERN_NONE     : "SEARCH_PATTERN_NONE"
+                           , SEARCH_PATTERN_NAVIGATE : 'SEARCH_PATTERN_NAVIGATE'
+                           , SEARCH_PATTERN_LEFT     : 'SEARCH_PATTERN_LEFT'
+                           , SEARCH_PATTERN_RIGHT    : 'SEARCH_PATTERN_RIGHT'
                            }
     
-    __currentSearchPattern = SEARCH_PATTERN_NA
-    TARGET_SEARCH_DISTANCE = 7.0 # Meters.
+    __currentSearchPattern = SEARCH_PATTERN_NONE
+    TARGET_SEARCH_DISTANCE = 6.0 # Meters.
     TARGET_SCALE_THRESH = 2000.0
     AUTO_AVOID_DEBOUNCE_COUNT = 4
     
@@ -285,6 +288,7 @@ class MissionPlanner(object):
     DIST_THRESH_AVOID_SONAR_FRONT = 100
     DIST_THRESH_AVOID_IR_MIN = 25
     DIST_THRESH_AVOID_IR_MAX = 85
+    
     DIST_THRESHOLDS_OBSTACLE = ( DIST_THRESH_AVOID_SONAR_SIDE
                                  , DIST_THRESH_AVOID_SONAR_FRONT
                                  , DIST_THRESH_AVOID_IR_MIN
@@ -295,6 +299,7 @@ class MissionPlanner(object):
     DIST_THRESH_SLOW_SONAR_FRONT = 120
     DIST_THRESH_SLOW_IR_MIN = 40
     DIST_THRESH_SLOW_IR_MAX = 70
+    
     DIST_THRESHOLDS_SLOW = ( DIST_THRESH_SLOW_SONAR_SIDE
                              , DIST_THRESH_SLOW_SONAR_FRONT
                              , DIST_THRESH_SLOW_IR_MIN
@@ -305,6 +310,7 @@ class MissionPlanner(object):
     DIST_THRESH_CLEAR_SONAR_FRONT = 130
     DIST_THRESH_CLEAR_IR_MIN = 45
     DIST_THRESH_CLEAR_IR_MAX = 65
+    
     DIST_THRESHOLDS_CLEAR = ( DIST_THRESH_CLEAR_SONAR_SIDE
                              , DIST_THRESH_CLEAR_SONAR_FRONT
                              , DIST_THRESH_CLEAR_IR_MIN
@@ -692,7 +698,9 @@ class MissionPlanner(object):
         self.__computeLocationDistance()
         self.__computeTurnDirection()
         
-        if self.__noObstaclesDetected():
+        if self.__noObstaclesDetected() \
+                and self.__currentSearchPattern == self.SEARCH_PATTERN_NONE:
+            
             self.__motorSpeed = self.SPEED_MAX
         elif self.__checkSlowDownRequired() or self.__crosstrackError > 45.0:
             # Slow dowm when cross track error is big.
@@ -726,22 +734,17 @@ class MissionPlanner(object):
                 self.setRunMode(self.MODE_TARGET_TRACKING)
                 self.__moveTowardTarget()
                 
-                if self.__distanceToTarget > 0 and self.__distanceToTarget < 80:
-                    # 80 CM as ranged by the center sonar rangefinder
+                if self.__distanceToTarget > 0 and self.__distanceToTarget < 100.0:
+                    # 100 cm as ranged by the center sonar rangefinder
                     logPrint('Ranging target: approaching target at slow speed.')
                     self.__motorSpeed = self.SPEED_MIN
                 
                 if self.__messageSpacial.bumperLeft or self.__messageSpacial.bumperRight:
                     self.saveImages()
                     logPrint('Contacted target, index: ' + str(self.__locationIndex))
-                    self.__locationIndex += 1
-                    self.__targetSearchDistance = 0
-                    # Set the target shape locked member to false after index increment..
-                    self.__targetShapeLocked = False
+                    self.__setSearchPatternNone()
                     # Reset our vector location to the previus one in the list. 
                     self.__setVectorPositionToPrevLocation()
-                    self.setRunMode(self.MODE_WAYPOINT_SEARCH)
-                    self.__currentSearchPattern = self.SEARCH_PATTERN_NA
             else:
                 if self.__autoAvoidTimer.checkTimeout() < 0:
                     self.setRunMode(self.MODE_TARGET_SEARCH)
@@ -766,21 +769,26 @@ class MissionPlanner(object):
         speedLeft = 0
         speedRight = 0
         
-        if self.__turnDirection == self.TURN_LEFT:
-            if self.currentMode == self.MODE_TARGET_TRACKING:
+        if self.currentMode == self.MODE_TARGET_TRACKING \
+                or self.__currentSearchPattern != self.SEARCH_PATTERN_NONE:
+            
+            # Use subtractive turning when looking for a cone.
+            if self.__turnDirection == self.TURN_LEFT:
                 speedLeft = int(self.__motorSpeed - self.__turnMagnitude)
                 speedRight = int(self.__motorSpeed)
-            else:
-                speedLeft = int(self.__motorSpeed)
-                speedRight = int(self.__motorSpeed + self.__turnMagnitude)
-        elif self.__turnDirection == self.TURN_RIGHT:
-            if self.currentMode == self.MODE_TARGET_TRACKING:
+            elif self.__turnDirection == self.TURN_RIGHT:
                 speedLeft = int(self.__motorSpeed)
                 speedRight = int(self.__motorSpeed - self.__turnMagnitude)
-            else:
+        else:
+            # Use additive turning when navigating (avoids zero turning radius).
+            if self.__turnDirection == self.TURN_LEFT:
+                speedLeft = int(self.__motorSpeed)
+                speedRight = int(self.__motorSpeed + self.__turnMagnitude)
+            elif self.__turnDirection == self.TURN_RIGHT:
                 speedLeft = int(self.__motorSpeed + self.__turnMagnitude)
                 speedRight = int(self.__motorSpeed)
-        elif self.__turnDirection == self.TURN_STRAIGHT \
+        
+        if self.__turnDirection == self.TURN_STRAIGHT \
             or self.__motorSpeed == self.SPEED_STOP:
             
             speedLeft = int(self.__motorSpeed)
@@ -789,7 +797,6 @@ class MissionPlanner(object):
         #print speedLeft, speedRight
         # Set the speed of the right and left motor's
         self.setMotorSpeed(speedLeft, speedRight)
-        
         return
     
     
@@ -865,10 +872,12 @@ class MissionPlanner(object):
         self.__targetShapeX = message.targetShapeX
         self.__targetShapeY = message.targetShapeY
         self.__targetScale = message.targetScale
+        
         if self.__targetShapeVisible \
             and self.__targetScale > self.TARGET_SCALE_THRESH \
             and self.__getCurrentLocationType() == self.LOCATION_TYPE_TARGET \
             and self.__distanceToLocation <= self.THRESHOLD_TARGET_DISTANCE:
+            
             # Lock in the fact that we are seeing the cone.
             if not self.__targetShapeLocked:
                 logPrint('Target shape locked, target tracking on color allowed')
@@ -884,7 +893,7 @@ class MissionPlanner(object):
         if not message.targtColorVisible:
             # If we no longer see the target color, then shape is not locked.
             if self.__targetShapeLocked:
-                logPrint('No longer see the target color, shape unlocked.')
+                logPrint('No longer see target color, target shape unlocked.')
                 self.__targetShapeLocked = False
         
         return
@@ -938,7 +947,8 @@ class MissionPlanner(object):
         
         self.__currentMode = mode
         logPrint('Setting system controller mode: ' + self.MODE_NAMES[mode]
-                 + ' location index: ' + str(self.__locationIndex))
+                 + ', loc index: ' + str(self.__locationIndex)
+                 + ', loc dist: ' + str(round(self.__distanceToLocation, 3)))
         
         # Set the run mode of the spacial controller
         if mode == self.MODE_AUTO_AVOID:
@@ -1141,44 +1151,80 @@ class MissionPlanner(object):
         return
     
     
+    def __setSearchPatternNavigate(self, init_distance=False, log_print=True):
+        """Keep going toward where we think the cone is. The turn direction 
+        and magnitude are set previously in compute turn direction.
+        """
+        if init_distance:
+            self.__targetSearchDistance = 0.0
+        
+        if self.__currentSearchPattern != self.SEARCH_PATTERN_NAVIGATE:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_NAVIGATE
+            if log_print:
+                logPrint('Set search pattern to 1. Keep going to cone')
+    
+        return
+    
+    
+    def __setSearchPatternLeft(self, init_distance=False, log_print=True):
+        if init_distance:
+            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE
+        
+        if self.__currentSearchPattern != self.SEARCH_PATTERN_LEFT:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_LEFT
+            if log_print:
+                logPrint('Set search pattern to 2. turn left')
+        
+        self.__turnDirection = self.TURN_LEFT
+        self.__turnMagnitude = 15.0
+        return
+    
+    
+    def __setSearchPatternRight(self, init_distance=False, log_print=True):
+        if init_distance:
+            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE * 2
+        
+        if self.__currentSearchPattern != self.SEARCH_PATTERN_RIGHT:
+            self.__currentSearchPattern = self.SEARCH_PATTERN_RIGHT
+            if log_print:
+                logPrint('Set search pattern to 3. turn right')
+        
+        self.__turnDirection = self.TURN_RIGHT
+        self.__turnMagnitude = 15.0
+        return
+    
+    
+    def __setSearchPatternNone(self):
+        self.__currentSearchPattern = self.SEARCH_PATTERN_NONE
+        logPrint('Stop searchng for target, incrementing location index.')
+        self.__locationIndex += 1
+        self.__targetSearchDistance = 0.0
+        # Set the target shape locked member to false after index increment..
+        self.__targetShapeLocked = False
+        self.setRunMode(self.MODE_WAYPOINT_SEARCH)
+        return
+    
+    
     def __searchForTarget(self):
-        """Here we execute target search patterns, but for now, do nothing.
-        The targetShapeVisible flag is already set in the updateVision function."""
+        """Here we execute target search patterns, we lost sight of the cone
+        or never saw it, so try to move in a way to begin to see the target.
+        """
         
         self.__targetSearchDistance += self.__loopDisplacement
         
-        logPrint('Searching for target, current search distance: '
-                 + str(self.__targetSearchDistance) + ', current search pattern: '
-                 + str(self.__currentSearchPattern), LOG_LEVEL_DEBUG)
+        logPrint('Searching for target, search distance: '
+                 + str(self.__targetSearchDistance) + ', search pattern: '
+                 + self.SEARCH_PATTERN_NAMES[self.__currentSearchPattern]
+                 , LOG_LEVEL_DEBUG)
         
         if self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE:
-            if self.__currentSearchPattern != self.SEARCH_PATTERN_1:
-                self.__currentSearchPattern = self.SEARCH_PATTERN_1
-                logPrint('Set search pattern to 1. Keep going to cone')
-            
-            # Keep going toward where we think the cone is. The turn direction 
-            # and magnitude are set previously in compute turn direction
+            self.__setSearchPatternNavigate()
         elif self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE * 2:
-            if self.__currentSearchPattern != self.SEARCH_PATTERN_2:
-                self.__currentSearchPattern = self.SEARCH_PATTERN_2
-                logPrint('Set search pattern to 2. turn left')
-            
-            self.__turnDirection = self.TURN_LEFT
-            self.__turnMagnitude = 20.0
+            self.__setSearchPatternLeft()
         elif self.__targetSearchDistance < self.TARGET_SEARCH_DISTANCE * 3:
-            if self.__currentSearchPattern != self.SEARCH_PATTERN_3:
-                self.__currentSearchPattern = self.SEARCH_PATTERN_3
-                logPrint('Set search pattern to 3. turn right')
-            
-            self.__turnDirection = self.TURN_RIGHT
-            self.__turnMagnitude = 20.0
+            self.__setSearchPatternRight()
         else:
-            self.__currentSearchPattern = self.SEARCH_PATTERN_NA
-            logPrint('Giving up on target, incrementing location index.')
-            self.__locationIndex += 1
-            self.__targetSearchDistance = 0.0
-            self.__targetShapeLocked = False
-            self.setRunMode(self.MODE_WAYPOINT_SEARCH)
+            self.__setSearchPatternNone()
         
         return
     
@@ -1192,12 +1238,11 @@ class MissionPlanner(object):
         distanceToTarget = self.__messageSpacial.sonarFront
         # basically, we center the target in the image.
         if self.__targetShapeX < self.CAMERA_HORIZONTAL_CENTER:
-            self.__turnDirection = self.TURN_LEFT
-            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE
+            self.__setSearchPatternLeft(init_distance=True, log_print=False)
         elif self.__targetShapeX > self.CAMERA_HORIZONTAL_CENTER:
-            self.__turnDirection = self.TURN_RIGHT
-            self.__targetSearchDistance = self.TARGET_SEARCH_DISTANCE * 2
+            self.__setSearchPatternRight(init_distance=True, log_print=False)
         else:
+            self.__setSearchPatternNavigate(init_distance=True, log_print=False)
             self.__turnDirection = self.TURN_STRAIGHT
         
         # Such that at 40 cm the cone is ranged across the full field of view
