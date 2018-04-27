@@ -231,7 +231,7 @@ class MissionPlanner(object):
                        , RADIO_MODE_MOTION_ENABLED_REMOTE : 'RADIO_MODE_MOTION_ENABLED_REMOTE'
                          }
     
-    THRESHOLD_TARGET_DISTANCE = 6.0 # Meters to target before we look for it...
+    THRESHOLD_TARGET_DISTANCE = 8.0 # Meters to target before we look for it...
     THRESHOLD_WAYPOINT_DISTANCE = 3.0 # Meters to location before we go to the next one.
     
     TURN_LEFT = 0
@@ -244,10 +244,10 @@ class MissionPlanner(object):
                            }
     
     SPEED_STOP = 128
-    SPEED_MIN = SPEED_STOP + 10
-    SPEED_MED = SPEED_STOP + 20
-    SPEED_FAST = SPEED_STOP + 30
-    SPEED_MAX = SPEED_STOP + 40
+    SPEED_MIN = SPEED_STOP + 12
+    SPEED_MED = SPEED_STOP + 24
+    SPEED_FAST = SPEED_STOP + 36
+    SPEED_MAX = SPEED_STOP + 48
     
     # TODO: tune these ratios
     TURN_RATIO = float(2 * (SPEED_MED - SPEED_STOP)) / 180.0
@@ -279,7 +279,7 @@ class MissionPlanner(object):
                            }
     
     __currentSearchPattern = SEARCH_PATTERN_NONE
-    TARGET_SEARCH_DISTANCE = 6.0 # Meters.
+    TARGET_SEARCH_DISTANCE = 8.0 # Meters.
     TARGET_SCALE_THRESH = 2000.0
     AUTO_AVOID_DEBOUNCE_COUNT = 4
     
@@ -415,6 +415,7 @@ class MissionPlanner(object):
         logPrint('Current Location: ' + repr(self.__locations[0]))
         self.__setVectorPositionToPrevLocation()
         self.__autoAvoidTimer = TimeoutTimer()
+        self.__seeConeTimer = TimeoutTimer()
         
         easting = self.__locations[0][0][0]
         northing = self.__locations[0][0][1]
@@ -727,8 +728,9 @@ class MissionPlanner(object):
                 if self.currentMode != self.MODE_TARGET_TRACKING:
                     # Stop for a bit. Take a picture.
                     self.__motorSpeed = self.SPEED_STOP
+                    self.__seeConeTimer.resetTimeout(0.5)
                     self.saveImages()
-                else:
+                elif self.__seeConeTimer.checkTimeout() < 0:
                     self.__motorSpeed = self.SPEED_MED
                 
                 self.setRunMode(self.MODE_TARGET_TRACKING)
@@ -1176,7 +1178,7 @@ class MissionPlanner(object):
                 logPrint('Set search pattern to 2. turn left')
         
         self.__turnDirection = self.TURN_LEFT
-        self.__turnMagnitude = 15.0
+        self.__turnMagnitude = 10.0
         return
     
     
@@ -1190,7 +1192,7 @@ class MissionPlanner(object):
                 logPrint('Set search pattern to 3. turn right')
         
         self.__turnDirection = self.TURN_RIGHT
-        self.__turnMagnitude = 15.0
+        self.__turnMagnitude = 10.0
         return
     
     

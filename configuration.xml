@@ -1,6 +1,6 @@
 <configuration>
     <!-- Mission file, contains Lat/Lon: -->
-    <mission>mercer_island.gpx</mission>
+    <mission>robogames_test3.gpx</mission>
     <!-- Port Configurations -->
     <port>
         <name>/dev/serial/by-id/usb-FTDI_TTL232R-3V3_FTH7JURZ-if00-port0</name>
@@ -14,10 +14,11 @@
         <name>/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_010793E6-if00-port0</name>
         <rate>57600</rate>
     </port>
-    <!-- Encoder configuration section. Counts per meter: -->
-    <encoder_counts_per_meter>2858</encoder_counts_per_meter>
+    <!-- Encoder configuration section. Counts per meter: (nominal wheel diameter 49cm +- 2mm) -->
+    <!-- ((276458 + 282359 + 275493 + 282138) (counts) / 4.0 (samples)) / 91.44 (meters) -->
+    <encoder_counts_per_meter>2800</encoder_counts_per_meter>
     <!-- Enable the use of IR range-finders: -->
-    <enable_ir_rangefinders>True</enable_ir_rangefinders>
+    <enable_ir_rangefinders>False</enable_ir_rangefinders>
     <!-- Enable the use of the GPS module for position estimation: -->
     <enable_gps>True</enable_gps>
 
@@ -52,6 +53,7 @@
     <compass>
         <!-- The difference between magnetic north and true north: -->
         <!-- -15.76 for Mercer Island  -->
-        <declination>-8.0</declination>
+        <!-- -13.37 Alameda Fair Grounds  -->
+        <declination>-13.37</declination>
     </compass>
 </configuration>
