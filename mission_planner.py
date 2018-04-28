@@ -244,10 +244,10 @@ class MissionPlanner(object):
                            }
     
     SPEED_STOP = 128
-    SPEED_MIN = SPEED_STOP + 12
-    SPEED_MED = SPEED_STOP + 24
-    SPEED_FAST = SPEED_STOP + 36
-    SPEED_MAX = SPEED_STOP + 48
+    SPEED_MIN = SPEED_STOP + 24
+    SPEED_MED = SPEED_STOP + 36
+    SPEED_FAST = SPEED_STOP + 48
+    SPEED_MAX = SPEED_STOP + 64
     
     # TODO: tune these ratios
     TURN_RATIO = float(2 * (SPEED_MED - SPEED_STOP)) / 180.0
